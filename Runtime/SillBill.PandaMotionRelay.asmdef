@@ -1,0 +1,5 @@
+{
+  "name": "SillBill.PandaMotionRelay",
+  "rootNamespace": "SillBill.PandaMotionRelay",
+  "references": ["Unity.Timeline"]
+}

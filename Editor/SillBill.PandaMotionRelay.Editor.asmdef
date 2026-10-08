@@ -1,0 +1,6 @@
+{
+  "name": "SillBill.PandaMotionRelay.Editor",
+  "rootNamespace": "SillBill.PandaMotionRelay.Editor",
+  "references": ["SillBill.PandaMotionRelay", "Unity.Timeline", "Unity.Timeline.Editor"],
+  "includePlatforms": ["Editor"]
+}

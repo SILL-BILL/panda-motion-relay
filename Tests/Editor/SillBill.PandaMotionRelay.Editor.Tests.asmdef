@@ -1,0 +1,7 @@
+{
+  "name": "SillBill.PandaMotionRelay.Editor.Tests",
+  "rootNamespace": "SillBill.PandaMotionRelay.Tests",
+  "references": ["SillBill.PandaMotionRelay", "SillBill.PandaMotionRelay.Editor", "Unity.Timeline"],
+  "includePlatforms": ["Editor"],
+  "optionalUnityReferences": ["TestAssemblies"]
+}
