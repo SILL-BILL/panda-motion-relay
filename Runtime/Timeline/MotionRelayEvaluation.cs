@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using UnityEngine;
+using UnityEngine.Playables;
 
 namespace SillBill.PandaMotionRelay
 {
@@ -39,6 +40,13 @@ namespace SillBill.PandaMotionRelay
                 mixer.ApplyPending();
             }
             return true;
+        }
+
+        /// <summary>Discard this director's queued writes when restoring an Editor sampling transaction.</summary>
+        public static void DiscardPendingPoses(PlayableDirector director)
+        {
+            for (int i = pending.Count - 1; i >= 0; i--)
+                if (pending[i].Director == director) pending[i].DiscardPending();
         }
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]

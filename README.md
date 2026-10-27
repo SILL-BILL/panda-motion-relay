@@ -3,7 +3,7 @@
 Timeline上のDriverから、常時ActiveのTargetへHumanoid姿勢を転送するUnity UPMパッケージです。
 Targetを切り替えたり無効化したりせず、揺れもの用のボーンを独立したまま維持する制作ツールを目指しています。
 
-## 現在の実装（Phase 2B / 0.1.0）
+## 現在の実装（Phase 3 / 0.1.0）
 
 - 複数Humanoid SourceをClipごとに指定できるTimeline Track / Clip。
 - 隣接ClipのExact Cut。前後Scrub・直接Seek・繰り返しSeekに対応。
@@ -13,7 +13,8 @@ Targetを切り替えたり無効化したりせず、揺れもの用のボー�
 - Editor Timeline PreviewとPlay Modeでの評価。
 - 自動Blendなし。重複Clipは警告してRelayを停止。
 
-Bake、Key Reduction、Generic Mapping、Driver Mesh補助UIは後続Phaseです。Blendは実装していません。
+Humanoid Target専用のGeneric AnimationClipへのRaw Bakeを利用できます。
+Key Reduction、Generic Mapping、Driver Mesh補助UIは後続Phaseです。Blendは実装していません。
 現段階では、本番用の完成したリターゲット／Bakeツールとしての利用は想定していません。
 
 ## 対応環境
@@ -71,7 +72,7 @@ Play Modeではアニメーションと標準Constraint評価後のLateUpdateで
 Editor Previewでは更新コールバックで最終Transformを読みますが、Edit Mode中のConstraint評価そのものをRelayが強制する機能はありません。
 今回の生成RigではEdit Modeの`PlayableDirector.Evaluate()`だけではParentConstraintがSourceを更新しなかったため、**純粋なEdit ModeでのParentConstraint付きTimeline Previewは未検証**です。実Sceneで別途確認が必要です。
 
-Custom Source／Target Root、Relative Offset、Position Only／Rotation Only、Blend、Bake、Generic Mappingは未対応です。
+Custom Source／Target Root、Relative Offset、Position Only／Rotation Only、Blend、Generic Mappingは未対応です。
 RootのScaleは正の均一Scaleを使用してください。
 Humanoid外の髪・スカート等のLocal姿勢は転送対象外ですが、親の身体ボーンには追従します。
 PhysBoneやVRChat固有Constraintとの実行順序は未検証です。
@@ -88,6 +89,38 @@ SillBill.PandaMotionRelay.MotionRelayEvaluation.ApplyPendingPoses();
 
 この明示適用はConstraintの評価を実行しません。Constraintを使う場合は、Unity側でそのFrameのConstraintが評価された後に呼んでください。
 
+## Humanoid-mapped Generic Bake
+
+1. 対象TimelineとRelay Trackを設定し、**Play Modeに入ります**。EditorのPauseは解除してください。
+2. DirectorのGameObjectを選択し、`Tools > Panda Motion Relay > Bake Humanoid to Generic`を開きます。
+3. DirectorとRelay Trackを確認し、`Bake to New Animation Clip`で新しい`.anim`の保存先を選びます。
+4. サンプリング完了を待ちます。キャンセル可能です。既存Assetは上書きしません。
+
+BakeはPlay Mode専用です。Unityのアニメーション・標準Constraint・Relay LateUpdateを経たTarget実Transformを、次のUpdateで採録します。Game Viewが非表示でも進むよう、WaitForEndOfFrameには依存しません。
+元のPreview Graphを使い、終了・取消時にDirectorの時刻／更新モード／再生状態、読み込まれたSceneのTransform／Parent／Active／Renderer／Animator有効状態を復元します。
+
+| 対象 | 出力Curve |
+| --- | --- |
+| Humanoid Mapping済みHips | Local Position + Quaternion Rotation |
+| その他のHumanoid Mapping済みBone（指を含む） | Quaternion Rotationのみ |
+| Target Animator.transform（Relay Motion Root ON時） | Parent空間のLocal Position + Quaternion Rotation |
+| Scale／Humanoid Mapping外のSecondary Bone | 出力なし |
+
+Boneは`Animator.GetBoneTransform()`で収集し、Pathは`AnimationUtility.CalculateTransformPath()`で生成します。
+回転は`m_LocalRotation.x/y/z/w`、位置は`m_LocalPosition.x/y/z`です。Quaternionの符号連続性を整えた後、Cut直前区間のTangentをConstantにして、境界をまたぐ自動Blendを防ぎます。
+
+採録範囲は**選択Relay Trackの最初のClip start〜最後のClip end（終了Frameを含む）**です。
+TimelineのFrame Rateで1Frameごとに記録し、保存Clipの時刻0を採録開始時刻に対応させます。Key Reduction／Curve Compressionは行いません。
+Clip境界はTimelineのFrameに揃えてください。Overlap、無効なTarget／Source、無効な出力先は採録前に拒否します。現在の上限は240fps・100000Frameです。
+
+Gapでは前後Sourceを合成せず、時刻順に採録した時点のTarget実Transformをそのまま記録します。他の制御がなければ、Gap直前のTarget姿勢が値として残ります。
+Motion RootはWorld PoseをそのFrameのTarget Parent空間に変換して保存します。Parentが固定の非Identity TransformでもWorld Motionを再現します。Parent自体が動く場合は、再生時にも同じParent Motionが必要です。
+
+出力は**同一HierarchyのTarget専用Generic Transform Clip**であり、Humanoid muscle Clipではありません。
+再生先は同一骨格のGeneric設定（Animator Avatarなし、または適切なGeneric Avatar）にしてください。Humanoid Avatarを通して再度リターゲットすると、保存値と再生姿勢が一致しない場合があります。
+Bake自体は元TargetのAvatarを変更しません。別キャラクターへのHumanoid再Retarget、Generic TargetのMapping、Custom FPS UI、Batch Bakeは未対応です。
+任意のユーザースクリプトや揺れものSimulationの内部状態を巻き戻す機能はありません。制作SceneはPlay Modeに入る前に保存してください。
+
 Clip外や無効な設定ではTargetを変更しません。通常のTimeline Previewの終了時は、登録したボーンの姿勢をUnityが復元します。
 スクリプトからの`Evaluate()`単独利用やPlay Mode停止時にRelay自身が初期姿勢へ戻すことはありません。
 
@@ -97,6 +130,7 @@ Editor Testは第三者モデルを使わず、テスト内でHumanoid Avatarを
 姿勢転送、サイズ差、Root配置とScaleの保持、Secondary Bone除外、無効な設定、Timeline前後シークとTrack順、Editor Preview、Play Modeを確認します。
 Phase 2Aでは、24／30／60fpsでのCut直前・Cut Frame・直後、A→B→A、Gap、Overlap、保留中の転送取消も検証します。
 Phase 2Bでは、Motion Root ON/OFF、別Parent、Scale保持、身体位置の二重移動防止、Root／Pose同時Cut、実ParentConstraint評価後の転送も検証します。
+Phase 3では、採録時Previewと同一HierarchyのGeneric再生結果を全Frameで比較し、Root・Hips・頭・手足・指・Secondary BoneのWorld／Local Poseを確認します。
 実行結果と現在の制限は[VERIFICATION.md](VERIFICATION.md)を参照してください。
 
 VRChat SDK環境での検証、VRChatアップロード、クライアントでの確認はまだ行っていません。

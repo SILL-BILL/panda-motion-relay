@@ -232,7 +232,7 @@ namespace SillBill.PandaMotionRelay.Tests
             return director;
         }
 
-        private Animator Rig(string name, float size)
+        private Animator Rig(string name, float size, bool fingers = false)
         {
             var root = Own(new GameObject(name));
             var bones = new Dictionary<string, Transform>();
@@ -259,6 +259,17 @@ namespace SillBill.PandaMotionRelay.Tests
                 add(side + "UpperArm", side + "Shoulder", new Vector3(.15f * direction, 0, 0));
                 add(side + "LowerArm", side + "UpperArm", new Vector3(.3f * direction, 0, 0));
                 add(side + "Hand", side + "LowerArm", new Vector3(.25f * direction, 0, 0));
+                if (fingers)
+                {
+                    string[] names = { "Thumb", "Index", "Middle", "Ring", "Little" };
+                    for (int finger = 0; finger < names.Length; finger++)
+                    {
+                        string prefix = side + " " + names[finger] + " ";
+                        add(prefix + "Proximal", side + "Hand", new Vector3(.04f * direction, 0, .04f - finger * .02f));
+                        add(prefix + "Intermediate", prefix + "Proximal", new Vector3(.03f * direction, 0, 0));
+                        add(prefix + "Distal", prefix + "Intermediate", new Vector3(.02f * direction, 0, 0));
+                    }
+                }
             }
             var human = new List<HumanBone>();
             foreach (var entry in bones)

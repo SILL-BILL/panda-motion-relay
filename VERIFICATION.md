@@ -1,4 +1,95 @@
-# Phase 2B verification
+# Phase 3 verification
+
+Verified on 2026-10-27 (Asia/Tokyo).
+Approved Phase 2B was checkpointed locally as `eaefef65b3cce5664ff4cf171dbc5a6d123c5b29` (`feat: add optional motion root relay`), without pushing.
+Phase 3 is on `feat/phase3-generic-bake`, uncommitted and unpushed pending maintainer approval.
+
+| Environment | Compilation | Tests | Exit/result |
+| --- | --- | --- | --- |
+| Unity 6000.0.84f1, Timeline 1.8.13 | Passed | 67 passed, 0 failed, 0 skipped | Connected Editor / Unity CLI |
+| Unity 2022.3.22f1, Timeline 1.7.6 | Passed | 67 passed, 0 failed, 0 skipped | Batch process exit code 0 |
+
+All 47 previous cases remain, plus 20 Phase 3 cases. The test rig optionally creates mapped finger bones, including Left Index Proximal, without any private or licensed model dependency.
+The final Unity 6 full-run summary is saved locally as `phase3-unity6-results.json`; 2022's XML independently records all 67 cases.
+Final Unity 6 status after smoke cleanup: compilation successful, Play Mode stopped, Console errors **0**, warnings **0**. Expected invalid-configuration warnings are asserted by tests; no unexpected warning failed either run.
+
+## Implemented bake contract
+
+- Entry point: `Tools > Panda Motion Relay > Bake Humanoid to Generic`. Select Director and Relay Track, then choose a new `.anim` path with SaveFilePanelInProject.
+- Bake runs in unpaused Play Mode on a normal coroutine. Each Timeline frame is evaluated, then the next Update samples the target after native constraints and Relay LateUpdate. It does not wait on rendering/Game View visibility.
+- Reuse the preview graph so AnimationTrack scene offsets/defaults are not reset. After sampling, restore the original clock, update mode and play state, discard that Director's queued Relay writes, and restore scene transforms/parents, active state, Renderer and Animator enabled state.
+- Bake range is the first selected Relay Clip start through the last end, inclusive of the ending frame. Clip time zero corresponds to the range's first frame. Timeline frame rate is used directly; boundaries must be frame-aligned.
+- Enumerate only `Animator.GetBoneTransform(HumanBodyBones)` mappings. Use `AnimationUtility.CalculateTransformPath` relative to Target Animator.transform.
+- Hips: local position and quaternion rotation. Other mapped body/finger bones: quaternion rotation only. Optional Animator root: world position/rotation converted to target-parent local curves. No scale, secondary-bone or Euler curves.
+- Keep every sampled frame. Maintain quaternion sign continuity, call EnsureQuaternionContinuity, then apply Constant right tangents to the frame before ownership boundaries. No reduction/compression/blend.
+- Gaps record the actual sequentially evaluated target state without filling from a source. Overlap, invalid/missing Director/Timeline/target/source, ambiguous mapped paths, non-frame-aligned boundaries and invalid/existing output paths are refused before sampling.
+- Existing output assets are protected by both initial validation and a second check immediately before CreateAsset. Tests verify existing GUID and file bytes remain unchanged.
+
+## Replay verification and errors
+
+Tests observe the evaluated target Transform hierarchy at each bake frame, then stop Relay and sample the saved Generic clip independently on an identical hierarchy configured for Generic (Avatar unset). Root, hips, head, hands, feet, mapped fingers and secondary-child world/local poses are compared at every frame, including A→B→A and cut-adjacent/sub-frame positions.
+
+| Scenario | Unity 6 max world position error | Unity 2022 max world position error | Max quaternion angular error |
+| --- | --- | --- | --- |
+| Mapped body/fingers and exact cuts | 0.000000287 m | 0.000000246 m | 0° |
+| Motion Root + non-Identity/scaled Target Parent + native ParentConstraint | 0.000004769 m | 0.000004769 m | 0° |
+| Internal gap | 0.000000584 m | 0.000000584 m | 0° |
+
+Assertions use position epsilon 0.001 m and quaternion angular epsilon 0.1°. All stored curve frames, scale/secondary exclusions, default/optional root behavior, frame rate, new asset creation, scene/Director restoration and cancellation cleanup passed.
+The native ParentConstraint is evaluated in Play Mode from an Editor coroutine, not approximated by a custom solver.
+
+## Unity 6 Editor smoke / visual check
+
+Performed through live Editor/Unity CLI operations on a temporary generated scene with an actual PlayableDirector and Timeline: Driver A → Driver B constrained to an animated vehicle anchor → Driver A. Opened the bake window, generated a 3-second / 30fps clip using the same Editor bake runner, stopped Relay, and sampled the generated clip alone on the target hierarchy configured for Generic.
+
+- Generated clip: 94 Transform curves, 91 keys per curve, zero scale curves and zero secondary/mesh-child curves.
+- Cut check: frame 29 root `(0,0,0)`; frame 30 approximately `(1.37,0,-0.10)` from the constrained animated anchor; frame 60 returns to `(0,0,0)`. These are authored source offsets, without automatic correction.
+- Preview versus standalone baked frame 30: max world position difference `0.000000632 m`, max rotation difference `0°`; the teal body/limbs and magenta secondary-hair marker match visually in paired Game View PNGs.
+- Director time restored to `1.0` after bake. Play Mode was subsequently stopped; the original SampleScene remained active with two roots and `isDirty=false`.
+- This was an agent-operated Editor smoke using generated primitives, not a production-character or VRChat client test.
+
+Local-only smoke evidence:
+
+```text
+Development~/LocalOnly/Verification/phase3-manual-smoke.json
+Development~/panda-motion-relay-dev-unity6/Assets/LocalOnly/Phase3Smoke/Recorded.anim
+Development~/panda-motion-relay-dev-unity6/Assets/LocalOnly/Phase3Smoke/preview-b.png
+Development~/panda-motion-relay-dev-unity6/Assets/LocalOnly/Phase3Smoke/baked-b.png
+Development~/panda-motion-relay-dev-unity6/Assets/LocalOnly/Phase3Smoke/baked-return-a.png
+Development~/LocalOnly/Verification/phase3-unity2022-results.xml
+Development~/LocalOnly/Verification/phase3-unity2022-tests.log
+Development~/LocalOnly/Verification/phase3-all-roundtrip-errors.txt
+```
+
+A temporary LocalOnly test-result observer was used to export complete results across domain reloads, then removed. Test behavior and production code do not depend on it.
+
+## Limits
+
+The output is a target-specific **Generic Transform** clip, not a Humanoid muscle clip. Replay requires the same hierarchy with Generic configuration (no Humanoid retarget pass). During diagnosis, sampling through a Humanoid Avatar added about 0.0077 m of hips translation despite the saved curve containing the correct value; Generic replay removes that extra conversion. Bake never changes the original target's Avatar.
+Unpaused Play Mode is required for reliable native Constraint evaluation. Pure Edit Mode Constraint baking is not implemented. If the target parent moves, its motion must also be reproduced on playback. Arbitrary script/physics internal state is not rewound; only the captured scene/Director properties are restored.
+Current limits are 240 fps and 100000 frames. Key reduction, curve compression, custom FPS UI, Generic rig mapping/scale transfer, relative offsets, Blend, batch baking, mesh helpers and VRChat-specific paths remain out of scope. No production asset or VRChat upload/client verification was performed.
+
+## Authored files
+
+```text
+.gitignore
+Editor/Bake/HumanoidGenericBaker.cs (+ .meta)
+Editor/Bake/BakeSceneState.cs (+ .meta)
+Editor/Bake/GenericBakeWindow.cs (+ .meta)
+Runtime/Timeline/MotionRelayEvaluation.cs
+Runtime/Timeline/MotionRelayMixer.cs
+Tests/Editor/GenericBakeTests.cs (+ .meta)
+Tests/Editor/HumanoidRelayTests.cs
+README.md
+CHANGELOG.md
+VERIFICATION.md
+```
+
+The existing automatic InputSystem_Actions.inputactions.meta change is outside the authored Phase 3 diff. LocalOnly/WorkSpace (and their folder metadata) are ignored, generated private test clips are not staged, and no Phase 3 files are staged. The authored diff passes `git diff --check`.
+
+---
+
+# Phase 2B verification (historical)
 
 Verified on 2026-10-27 (Asia/Tokyo).
 Phase 2A was approved and checkpointed locally as `2839534` (`feat: add exact-cut multi-source motion relay`). That commit was not pushed.

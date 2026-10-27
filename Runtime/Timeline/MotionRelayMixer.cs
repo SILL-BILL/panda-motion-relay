@@ -72,6 +72,12 @@ namespace SillBill.PandaMotionRelay
             if (relay != null && !relay.Apply(RelayMotionRoot)) Release();
         }
 
+        internal void DiscardPending()
+        {
+            pending = false;
+            MotionRelayEvaluation.Unschedule(this);
+        }
+
         public override void OnGraphStop(Playable playable) { Release(); }
         public override void OnPlayableDestroy(Playable playable) { Release(); }
 

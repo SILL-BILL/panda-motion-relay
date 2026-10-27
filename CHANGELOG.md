@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased — Phase 3
+
+- Add a Play Mode Editor bake window and raw per-frame Generic Transform clip exporter for Humanoid targets.
+- Bake only mapped bones: hips position/quaternion rotation, other mapped-bone quaternion rotation, and optional Animator-root position/rotation in parent space.
+- Exclude all scale and unmapped secondary-bone curves; use standard Unity Transform binding paths.
+- Preserve exact-cut boundaries with step tangents after Quaternion continuity processing; no key reduction or compression.
+- Validate sources, target, track overlap, frame alignment and new output paths before sampling; reject silent asset overwrite.
+- Restore scene transforms, activation/render states and Director state on completion or cancellation; discard only that Director's queued pose writes.
+- Add generated finger-rig tests and independent Generic replay comparisons. Generic playback requires a matching hierarchy configured for Generic, rather than a second Humanoid retarget pass.
+
 ## Unreleased — Phase 2B
 
 - Add an optional track-level Relay Motion Root setting, disabled by default.

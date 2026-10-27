@@ -10,6 +10,8 @@
 # Local developer data
 **/LocalOnly/
 **/WorkSpace/
+**/LocalOnly.meta
+**/WorkSpace.meta
 /.codex/
 /.agents/
 **/[Ll]ibrary/
