@@ -64,8 +64,11 @@ namespace SillBill.PandaMotionRelay
             }
         }
 
-        /// <summary>Transfers root-relative body position/rotation and muscles; root motion is not copied.</summary>
-        public bool Apply()
+        /// <summary>Transfers the Humanoid pose while preserving the target root.</summary>
+        public bool Apply() { return Apply(false); }
+
+        /// <summary>Optionally copies Animator-root world position/rotation; never transfers scale.</summary>
+        public bool Apply(bool relayMotionRoot)
         {
             if (disposed || !IsValid(source) || !IsValid(target) ||
                 source.avatar != sourceAvatar || target.avatar != targetAvatar ||
@@ -76,14 +79,25 @@ namespace SillBill.PandaMotionRelay
             root.Capture();
             foreach (var state in protectedBones) state.Capture();
             foreach (var state in mappedBones) state.CaptureScale();
+            // Read root and body from the same selected source at late-apply time, after
+            // animation/standard constraints. Never capture the root in ProcessFrame.
+            var sourcePosition = source.transform.position;
+            var sourceRotation = source.transform.rotation;
             sourceHandler.GetHumanPose(ref pose);
-            // GetHumanPose reports world-space COM normalized by humanScale, while
-            // SetHumanPose expects root-relative normalized COM. Remove driver placement.
-            pose.bodyPosition = Quaternion.Inverse(source.transform.rotation) *
-                (pose.bodyPosition - source.transform.position / source.humanScale);
-            pose.bodyRotation = Quaternion.Inverse(source.transform.rotation) * pose.bodyRotation;
+            // GetHumanPose's normalized COM is in the Animator root's parent space.
+            // SetHumanPose expects root-relative COM. Removing local root placement
+            // also works under translated/rotated/scaled ancestors (world subtraction does not).
+            pose.bodyPosition = Quaternion.Inverse(source.transform.localRotation) *
+                (pose.bodyPosition - source.transform.localPosition / source.humanScale);
+            pose.bodyRotation = Quaternion.Inverse(source.transform.localRotation) * pose.bodyRotation;
             try
             {
+                if (relayMotionRoot)
+                {
+                    target.transform.SetPositionAndRotation(sourcePosition, sourceRotation);
+                    // Preserve this requested root during SetHumanPose, including target scale.
+                    root.Capture();
+                }
                 targetHandler.SetHumanPose(ref pose);
             }
             finally

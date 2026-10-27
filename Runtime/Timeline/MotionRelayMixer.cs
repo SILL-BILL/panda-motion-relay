@@ -14,6 +14,7 @@ namespace SillBill.PandaMotionRelay
 
         internal TimelineClip[] Clips { get; set; }
         internal PlayableDirector Director { get; set; }
+        internal bool RelayMotionRoot { get; set; }
 
         public override void ProcessFrame(Playable playable, FrameData info, object playerData)
         {
@@ -68,7 +69,7 @@ namespace SillBill.PandaMotionRelay
         {
             if (!pending) return;
             pending = false;
-            if (relay != null && !relay.Apply()) Release();
+            if (relay != null && !relay.Apply(RelayMotionRoot)) Release();
         }
 
         public override void OnGraphStop(Playable playable) { Release(); }

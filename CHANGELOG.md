@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased — Phase 2B
+
+- Add an optional track-level Relay Motion Root setting, disabled by default.
+- Relay the selected Animator root's late-evaluated world position and rotation together with its Humanoid pose; preserve target scale.
+- Normalize HumanPose body placement in the Animator parent's coordinate space for independent source/target hierarchies.
+- Register target root position/rotation for Timeline preview restoration when enabled.
+- Add tests for root settings, application order, parent spaces, exact cuts, secondary-bone/visibility preservation and native ParentConstraint evaluation in Play Mode.
+- Pure Edit Mode ParentConstraint preview remains unverified; Relay does not force native constraint evaluation.
+
 ## Unreleased — Phase 2A
 
 - Multiple Humanoid sources using each Relay Clip's own Source Animator.

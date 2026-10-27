@@ -1,4 +1,65 @@
-# Phase 2A verification
+# Phase 2B verification
+
+Verified on 2026-10-27 (Asia/Tokyo).
+Phase 2A was approved and checkpointed locally as `2839534` (`feat: add exact-cut multi-source motion relay`). That commit was not pushed.
+Phase 2B is on `feat/phase2-motion-root`, uncommitted and unpushed pending maintainer review.
+
+| Environment | Timeline | Compilation | Tests |
+| --- | --- | --- | --- |
+| Unity 6000.0.84f1, primary development project | 1.8.13 | Passed | 47 passed, 0 failed, 0 skipped |
+| Unity 2022.3.22f1, compatibility development project | 1.7.6 | Passed | 47 passed, 0 failed, 0 skipped |
+
+The 29 prior cases are retained; `Tests/Editor/MotionRootRelayTests.cs` adds 18 cases.
+Unity 6 live inspection, compilation and tests used Unity CLI because Unity MCP tools were not exposed in this chat.
+Unity 2022.3.22f1 ran the same assembly in batch mode and exited with code 0. Its XML explicitly records the native ParentConstraint test as passed.
+The final Unity 6 Console reported zero current errors and warnings, compilation successful and Play Mode stopped. Expected overlap/invalid-source warnings are asserted by the tests.
+
+## Motion Root behavior and application order
+
+- Track Inspector option: **Relay Motion Root**, serialized as `MotionRelayTrack.relayMotionRoot`, default **false**. Existing tracks remain OFF.
+- OFF: target root position, rotation and local scale are preserved.
+- ON: source Animator.transform world position and rotation are copied to target Animator.transform. Target scale and target parent are preserved. No local-space root copying, relative offset or interpolation is used.
+- `ProcessFrame` selects one source using Phase 2A's `start <= time < end` rule. It queues the source, not a position/rotation snapshot.
+- At late apply, root position/rotation and HumanPose are sampled from that same source. Play Mode uses the existing execution-order-32000 LateUpdate; Editor preview uses the existing Editor update callback.
+- The implementation applies **target world root, then HumanPose**, and restores the requested root and protected scale/secondary transforms after HumanPose application.
+- The order-comparison test exercises both root-before-pose and pose-before-root against root world pose, the arm muscle and hips local position. Both orders passed for the translated/rotated, different-size generated rigs. Root-before-pose was retained as the explicit implementation order and is covered by all integrated root/pose tests.
+- Empirical inspection showed HumanPose's normalized body placement is in the Animator root's parent space. Removing local root placement before retargeting avoids double movement under transformed ancestors. This normalization uses local coordinates only for the body; Motion Root itself is transferred in world coordinates.
+- Gaps and overlaps cancel pending pose/root application. No new target writes occur; overlaps warn without choosing a source.
+
+## Added verification
+
+- Default OFF and JSON serialization round trip.
+- World position/rotation, independent translated/rotated source and target parents, and positive uniform parent scales.
+- Different source root scales with target root/mapped-bone scale preserved.
+- Late root reads after `ProcessFrame` and automatic Editor preview reads after parent-space changes.
+- Root and pose switch together at frames 99/100/101 and 199/200/201 at 24/30/60 fps, including backward and repeated seeks.
+- Full target Transform snapshots remain unchanged in gaps/overlaps, even when a previous source was queued.
+- Secondary-bone local position/rotation/scale, target and driver renderer states, and activation preserved through cuts.
+- **Real native ParentConstraint**: an Editor coroutine enters Play Mode, moves/rotates an anchor, evaluates the Timeline, then verifies Source B matches the anchor and Target root/pose match the selected source. The sequence crosses the cut in both directions without manually solving the constraint or manually flushing the relay.
+
+## Known limits and verification boundary
+
+The native ParentConstraint evaluation test runs in **Play Mode from the Editor Test assembly**, in both supported Editors. It is not a claim of pure Edit Mode Constraint preview verification.
+During exploratory pure Edit Mode tests, the generated rig's ParentConstraint did not move its Source after `PlayableDirector.Evaluate()` plus Editor updates, including an animated anchor. Because the native constraint result was not produced, that setup cannot prove post-constraint relay in Edit Mode. The final Edit Mode test instead verifies late reading of an updated parent-space world transform. **Manual pure Edit Mode Timeline Preview with ParentConstraint still needs validation in a real scene.**
+Relay does not force native Constraint evaluation. Explicit `ApplyPendingPoses()` must be called after the caller has allowed the relevant constraint evaluation to finish. Custom scripts writing the source after Relay's LateUpdate, non-uniform scale/shear and VRChat-specific execution order are unverified.
+
+Custom roots, relative offsets, position-only/rotation-only modes, Blend, Bake, key reduction, Generic/scale mapping, visibility helpers and VRC-specific code remain out of scope. No private model, VRChat upload or client-side verification was used.
+
+Local-only evidence:
+
+```text
+Development~/LocalOnly/Verification/phase2b-unity6-results.json
+Development~/LocalOnly/Verification/phase2b-unity2022-results.xml
+Development~/LocalOnly/Verification/phase2b-unity2022-tests.log
+```
+
+Authored changes: `Runtime/Mapping/HumanoidPoseRelay.cs`, `Runtime/Timeline/MotionRelayMixer.cs`, `Runtime/Timeline/MotionRelayTrack.cs`, `Editor/Timeline/MotionRelayClipEditor.cs`, `Tests/Editor/MotionRootRelayTests.cs` and its `.meta`, `README.md`, `CHANGELOG.md`, and this file.
+The pre-existing Unity-generated change to `Development~/panda-motion-relay-dev-unity6/Assets/InputSystem_Actions.inputactions.meta` was excluded from the Phase 2A checkpoint and is not part of the authored Phase 2B implementation.
+No Phase 2B files are staged; LocalOnly/WorkSpace and generated caches remain untracked. The authored diff passes `git diff --check`.
+
+---
+
+# Phase 2A verification (historical)
 
 Verified on 2026-10-27 (Asia/Tokyo), based on `cc3e71c` on branch `feat/phase2-exact-cut`.
 Implementation and validation only; no commit or push has been performed for Phase 2A.
