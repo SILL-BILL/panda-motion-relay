@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.Playables;
 using UnityEngine.Timeline;
@@ -11,7 +12,10 @@ namespace SillBill.PandaMotionRelay
     {
         public override Playable CreateTrackMixer(PlayableGraph graph, GameObject go, int inputCount)
         {
-            return ScriptPlayable<MotionRelayMixer>.Create(graph, inputCount);
+            var mixer = ScriptPlayable<MotionRelayMixer>.Create(graph, inputCount);
+            mixer.GetBehaviour().Clips = new List<TimelineClip>(GetClips()).ToArray();
+            mixer.GetBehaviour().Director = graph.GetResolver() as PlayableDirector;
+            return mixer;
         }
 
         public override void GatherProperties(PlayableDirector director, IPropertyCollector driver)

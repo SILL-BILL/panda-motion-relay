@@ -1,4 +1,52 @@
-# Phase 1 verification
+# Phase 2A verification
+
+Verified on 2026-10-27 (Asia/Tokyo), based on `cc3e71c` on branch `feat/phase2-exact-cut`.
+Implementation and validation only; no commit or push has been performed for Phase 2A.
+
+| Environment | Timeline | Compilation | Tests |
+| --- | --- | --- | --- |
+| Unity 6000.0.84f1, primary development project | 1.8.13 | Passed | 29 passed, 0 failed |
+| Unity 2022.3.22f1, compatibility development project | 1.7.6 | Passed | 29 passed, 0 failed |
+
+The 11 Phase 1 cases are retained. Phase 2A adds 18 cases in `Tests/Editor/ExactCutRelayTests.cs`, sharing the synthetic Humanoid fixture through a partial test class.
+Unity 6 was inspected and tested through the installed Unity CLI against the running `panda-motion-relay-dev-unity6` Editor. The chat session did not expose Unity MCP tools, so the CLI's shared Editor connection was used for live inspection, compilation, test execution and Console checks.
+Unity 2022.3.22f1 ran with `-batchmode -nographics -runTests -testPlatform EditMode` and exited with code 0.
+The final Unity 6 Console reported zero current errors and warnings, with Play Mode stopped.
+
+## Cut evaluation
+
+- A clip owns `start <= current director time < end`. At an adjacent boundary the incoming clip owns the time exclusively.
+- Each selected clip resolves its own exposed Source Animator. A source change disposes the old pose handler and creates a handler for the newly selected pair.
+- Clip weights do not blend, ease or prioritize pose sources. Current time determines selection, independent of seek history.
+- Pose application still runs after animation evaluation: Editor update for preview, LateUpdate in Play Mode, or explicit `ApplyPendingPoses()` after programmatic `Evaluate()`.
+- A gap cancels pending application and does not write to the target. It neither restores a prior pose nor continues following an old source.
+- Two or more occupying clips, even with the same Source, invalidate the overlap. One warning is emitted per continuous invalid encounter, pending application is canceled and no source wins.
+
+## Added coverage
+
+- Driver A and B independently; A→B→A sequence.
+- Cut frames 99/100/101 and 199/200/201 at 24, 30 and 60 fps, including reverse seeks.
+- Forward frame-by-frame evaluation, arbitrary jumps, repeated seeks and replacement of an unflushed source.
+- Gap boundaries/interior and timeline end: full target Transform snapshot remains unchanged, including after a queued previous source.
+- Overlap rejection and warning suppression/re-entry, including repeated references to the same source.
+- Invalid incoming source does not reuse an earlier source.
+- Target root, scale, secondary-bone local pose, renderer visibility and activation preserved across repeated cuts.
+- Automatic Editor preview across cuts and real GameTime Play Mode playback through A→B→A without manual flushing.
+
+Local evidence (ignored):
+
+```text
+Development~/LocalOnly/Verification/phase2a-unity6-results.json
+Development~/LocalOnly/Verification/phase2a-unity2022-results.xml
+Development~/LocalOnly/Verification/phase2a-unity2022-tests.log
+```
+
+Motion-root/ParentConstraint world-motion transfer, Bake, key reduction, Generic/scale mapping, Blend, Driver Mesh UI and VRChat-specific code are outside this phase.
+No production-model or VRChat SDK, upload or client verification was performed.
+
+---
+
+# Phase 1 verification (historical)
 
 Verified on 2026-10-08 (Asia/Tokyo).
 
@@ -53,7 +101,7 @@ This is the first milestone from the initial development instructions, not compl
 No real production character, PhysBone simulation, VRChat SDK, upload or client-side verification has been performed.
 Secondary-bone exclusion here means preserving their local pose, not proof of a complete physics integration.
 Different source rest poses, finger-rich production Avatars, constraint timing and non-uniform root scales need additional coverage before production use.
-Motion-root transfer, multi-source exact cuts, bake, key reduction and Generic mapping remain later milestones.
+At the Phase 1 checkpoint, motion-root transfer, multi-source exact cuts, bake, key reduction and Generic mapping remained later milestones. Multi-source exact cuts have since been verified in Phase 2A above.
 
 Programmatic `PlayableDirector.Evaluate()` must be followed by `MotionRelayEvaluation.ApplyPendingPoses()` for synchronous sampling.
 Ordinary Editor preview and Play Mode playback apply pending poses automatically.

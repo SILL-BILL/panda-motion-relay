@@ -11,7 +11,7 @@ using Object = UnityEngine.Object;
 
 namespace SillBill.PandaMotionRelay.Tests
 {
-    public sealed class HumanoidRelayTests
+    public sealed partial class HumanoidRelayTests
     {
         private readonly List<Object> owned = new List<Object>();
 

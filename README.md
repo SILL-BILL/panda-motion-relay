@@ -3,15 +3,16 @@
 Timeline上のDriverから、常時ActiveのTargetへHumanoid姿勢を転送するUnity UPMパッケージです。
 Targetを切り替えたり無効化したりせず、揺れもの用のボーンを独立したまま維持する制作ツールを目指しています。
 
-## 現在の実装（Phase 1 / 0.1.0）
+## 現在の実装（Phase 2A / 0.1.0）
 
-- 1ソースHumanoid Relayと専用Timeline Track / Clip。
+- 複数Humanoid SourceをClipごとに指定できるTimeline Track / Clip。
+- 隣接ClipのExact Cut。前後Scrub・直接Seek・繰り返しSeekに対応。
 - AvatarのHumanPose（マッスル・身体位置・身体回転）を使ったリターゲット。
 - TargetのRoot配置・Scale・Humanoid Mapping外のボーンのLocal姿勢を保持。
 - Editor Timeline PreviewとPlay Modeでの評価。
 - 自動Blendなし。重複Clipは警告してRelayを停止。
 
-複数ソースの厳密なCut切替、Bake、Key Reduction、Generic Mapping、Driver Mesh補助UIは後続Phaseです。
+Motion Root転送、Bake、Key Reduction、Generic Mapping、Driver Mesh補助UIは後続Phaseです。Blendは実装していません。
 現段階では、本番用の完成したリターゲット／Bakeツールとしての利用は想定していません。
 
 ## 対応環境
@@ -35,8 +36,15 @@ Editor Testを表示するにはプロジェクトの`Packages/manifest.json`に
 2. PlayableDirectorとTimeline Assetを用意します。
 3. 通常のAnimation TrackをDriver Animatorへバインドし、Driverのアニメーションを配置します。
 4. `Motion Relay Track`を追加し、Target Animatorへバインドします。
-5. Relay Trackに`Motion Relay Clip`を1つ配置し、Inspectorの`Source`へDriver Animatorを指定します。
-6. Clipの区間をDriverのアニメーションに合わせ、Timeline PreviewまたはPlay Modeで確認します。
+5. Relay Trackに`Motion Relay Clip`を配置し、Inspectorの`Source`へDriver Animatorを指定します。
+6. 複数Sourceを使う場合は、Clipを`[ Driver_A ][ Driver_B ][ Driver_A ]`のように隣接配置し、各Clipの`Source`を指定します。
+7. Clipの区間をDriverのアニメーションに合わせ、Timeline PreviewまたはPlay Modeで確認します。
+
+Sourceの評価規則は`clip.start <= 現在時刻 < clip.end`です。
+Clipの開始時刻を含み、終了時刻を含みません。例えばFrame 100からDriver_BのClipが始まる場合、Frame 99はDriver_A、Frame 100はDriver_Bです。
+Clipのウェイトによる混合や過去のSourceとの補間は行いません。複数Clipが占有するOverlapは警告し、その間は転送しません。
+Gapでは保留中の転送も取消し、Targetへ新たな書き込みを行いません。前Sourceの追従を続けたり、次Sourceを先読みしたりはしません。
+Gapに入る前の姿勢を積極的に復元することはなく、他のAnimationや制御もなければTargetのTransformは直前の値のままです。
 
 TargetとDriverのRoot・Animator・Armature・ConstraintはActiveを維持してください。
 Driverのメッシュを隠す場合はRendererの表示を変更してください。
@@ -65,6 +73,7 @@ Clip外や無効な設定ではTargetを変更しません。通常のTimeline P
 
 Editor Testは第三者モデルを使わず、テスト内でHumanoid Avatarを生成します。
 姿勢転送、サイズ差、Root配置とScaleの保持、Secondary Bone除外、無効な設定、Timeline前後シークとTrack順、Editor Preview、Play Modeを確認します。
+Phase 2Aでは、24／30／60fpsでのCut直前・Cut Frame・直後、A→B→A、Gap、Overlap、保留中の転送取消も検証します。
 実行結果と現在の制限は[VERIFICATION.md](VERIFICATION.md)を参照してください。
 
 VRChat SDK環境での検証、VRChatアップロード、クライアントでの確認はまだ行っていません。
