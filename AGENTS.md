@@ -135,6 +135,18 @@ The package metadata should continue to declare:
 
 unless the maintainer explicitly changes this policy.
 
+## Independent Package and Development Project Locations
+
+Development Project must not live inside a Local UPM Package repository when it consumes that package.
+
+A Unity Development Project must never reference a parent directory that contains the project itself as a local UPM package.
+
+Package repositories and development projects must be siblings or otherwise non-nested. This is the default rule for SILL-BILL Unity projects.
+
+Nested self-containing local package references have been confirmed to break TimelineAsset MonoScript type association in Unity 6 / Timeline 1.8.13. Do not attempt to solve this layout problem by repeatedly deleting Library or editing Timeline asset YAML.
+
+The package repository is the sole source of package code. External development projects are local workspaces, not tracked repository content or independent copies of the package source.
+
 ## Compatibility Rule
 
 Before introducing a Unity API, verify that the implementation can work in Unity 2022.3.22f1.
@@ -161,13 +173,14 @@ Do not scatter Unity-version checks throughout unrelated systems.
 
 # Development Project Layout
 
-Use the following development layout:
+Use sibling directories outside the package repository:
 
 ```text
-Development~/
-├─ panda-motion-relay-dev-unity6/
-├─ panda-motion-relay-dev-2022/
-└─ panda-motion-relay-vrchat-2022/
+<workspace>/
+├─ panda-motion-relay/                 # Git repository / UPM package source
+├─ panda-motion-relay-dev-unity6/      # Local Unity 6 workspace
+├─ panda-motion-relay-dev-2022/        # Local Unity 2022.3.22f1 workspace
+└─ panda-motion-relay-vrchat-2022/     # Local VCC-created World workspace
 ```
 
 Roles:
@@ -195,6 +208,16 @@ panda-motion-relay-vrchat-2022
 The VRChat project must be created through **VRChat Creator Companion**.
 
 Do not manually recreate the VRChat SDK environment.
+
+The three external Unity projects are not Git repositories and must not be committed to the package repository. Keep `Development~/README.md` as setup documentation only; do not store projects opened by Unity Editor inside the package repository.
+
+For the sibling layout above, use this dependency in each external project's `Packages/manifest.json`:
+
+```json
+"com.sillbill.panda-motion-relay": "file:../../panda-motion-relay"
+```
+
+Unity resolves `file:` relative paths from the project's `Packages` directory, not the project root. Two parent segments are therefore required to reach the shared workspace. Confirm PackageInfo.resolvedPath points to the package repository. Use the same sibling layout on each machine instead of hard-coding drive letters.
 
 ---
 

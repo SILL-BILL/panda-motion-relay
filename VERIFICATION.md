@@ -1,8 +1,28 @@
-# Phase 3 verification
+# External development layout verification
+
+Verified on 2026-10-27 (Asia/Tokyo). Phase 3 was approved and checkpointed as `5bfaa9b2d33728b2db8e7bd7082b620b4673097f` (`feat: add humanoid-mapped generic bake`). Migration work is on `chore/externalize-development-projects`.
+
+Consuming Unity projects now use independent sibling directories outside the package repository. The repository is the only package source; the local dependency is `file:../../panda-motion-relay`, relative to each project's `Packages` directory. PackageInfo confirms the resolved source is the repository itself.
+
+| External environment | Initial validation |
+| --- | --- |
+| Unity 6000.0.84f1 / Timeline 1.8.13 | Compilation passed; 67/67 tests passed; current Console Error 0 / Warning 0 |
+| Unity 2022.3.22f1 / Timeline 1.7.6 | Compilation passed; 67/67 tests passed; Console probe Error 0 / Warning 0 |
+| VCC-created World / Unity 2022.3.22f1 / SDK 3.10.5 | Panda and VRC SDK Base/Worlds loaded; compilation passed; Console probe Error 0 / Warning 0 |
+
+The external Unity 6 project returned TimelineAsset from MonoScript.GetClass. A fresh LocalOnly Timeline loaded as both TimelineAsset and PlayableAsset with Missing Script Count 0, appeared in the Director Object Picker's visible candidate list, and opened normally in Timeline with an Animation Track. The Phase 3 Bake Window opened successfully. The Unity CLI Pipeline server is reachable at the external project's path; machine-level MCP configuration was not changed.
+
+The VCC World project was created with Creator Companion's official VPM CLI and official World template, not by assembling SDK files manually. This is local Editor SDK coexistence verification only. **Actual VRChat upload and client-side verification have not been performed.**
+
+Detailed evidence and post-removal verification results are recorded locally in `Development~/LocalOnly/Verification/PermanentExternalMigration/`. Older evidence below describes the historical nested layout; its project asset paths are not current development setup instructions.
+
+After removing all three old nested projects, Unity 6 and Unity 2022.3.22f1 were each tested again: **67/67 passed, 0 failed, 0 skipped** in both environments. A second fresh Timeline created after removal again had valid type association, Missing Script Count 0 and a Director picker entry; Timeline and the Phase 3 Bake Window opened successfully. Runtime, Editor, Tests and package.json remain unchanged from the Phase 3 checkpoint.
+
+# Phase 3 verification (historical)
 
 Verified on 2026-10-27 (Asia/Tokyo).
 Approved Phase 2B was checkpointed locally as `eaefef65b3cce5664ff4cf171dbc5a6d123c5b29` (`feat: add optional motion root relay`), without pushing.
-Phase 3 is on `feat/phase3-generic-bake`, uncommitted and unpushed pending maintainer approval.
+The following describes the Phase 3 validation before its approved local checkpoint.
 
 | Environment | Compilation | Tests | Exit/result |
 | --- | --- | --- | --- |

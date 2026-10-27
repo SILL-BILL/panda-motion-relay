@@ -133,12 +133,31 @@ Phase 2Bでは、Motion Root ON/OFF、別Parent、Scale保持、身体位置の�
 Phase 3では、採録時Previewと同一HierarchyのGeneric再生結果を全Frameで比較し、Root・Hips・頭・手足・指・Secondary BoneのWorld／Local Poseを確認します。
 実行結果と現在の制限は[VERIFICATION.md](VERIFICATION.md)を参照してください。
 
-VRChat SDK環境での検証、VRChatアップロード、クライアントでの確認はまだ行っていません。
+VCC公式VPM CLIで作成した外部World SDK環境（Unity 2022.3.22f1 / SDK 3.10.5）で、PandaとSDKのコンパイル共存をローカル確認しました。実際のVRChatアップロードとクライアントでの確認は行っていません。
 
 ## 開発ポリシー
 
 詳細は[AGENTS.md](AGENTS.md)と[初期開発指示書](PANDA_MOTION_RELAY_INITIAL_DEVELOPMENT_INSTRUCTIONS.md)を参照してください。
-`Development~/`配下のAssets・Packagesのmanifest類・ProjectSettingsは、開発環境の復元用として管理します。
+開発用Unity Projectは、パッケージリポジトリの外にSiblingとして配置します。
+
+```text
+<workspace>/
+├─ panda-motion-relay/                 # Git / パッケージコードの正本
+├─ panda-motion-relay-dev-unity6/       # 主開発環境
+├─ panda-motion-relay-dev-2022/         # Unity 2022.3.22f1互換ゲート
+└─ panda-motion-relay-vrchat-2022/     # VCCで作成するWorld Project
+```
+
+外部Projectの`Packages/manifest.json`には、次のLocal Package参照を設定します。
+
+```json
+"com.sillbill.panda-motion-relay": "file:../../panda-motion-relay"
+```
+
+`file:`の相対パスは`Packages/`が基準です。会社PC・家PCで同じSibling構成にすれば、ドライブ名に依存せず共通利用できます。
+開発Project自身を含む親フォルダーをLocal UPM Packageとして参照してはいけません。Unity 6／Timeline 1.8.13で、Timelineの型関連付けが壊れることを確認しています。
+外部Projectはローカル開発環境で、Git管理やパッケージソースの複製・直接編集は行いません。Unity 6を主開発、Unity 2022.3.22f1を互換ゲートとし、VRChat用はVCCで作成してください。
+`Development~/`には[開発環境の説明](Development~/README.md)だけを置き、Unity Editorで開くProjectは置きません。
 Unity生成物、`LocalOnly/`、`WorkSpace/`、認証情報・ローカルMCP設定・私物や再配布不可の素材はGit管理対象外です。
 
 MIT License / Gonsaku
