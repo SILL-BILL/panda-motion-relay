@@ -232,14 +232,21 @@ namespace SillBill.PandaMotionRelay.Tests
             return director;
         }
 
-        private Animator Rig(string name, float size, bool fingers = false)
+        private Animator Rig(string name, float size, bool fingers = false, bool armature = false)
         {
             var root = Own(new GameObject(name));
+            var boneRoot = root.transform;
+            if (armature)
+            {
+                boneRoot = new GameObject("Armature").transform;
+                boneRoot.SetParent(root.transform, false);
+                boneRoot.localPosition = new Vector3(.13f, .17f, -.11f);
+            }
             var bones = new Dictionary<string, Transform>();
             Action<string, string, Vector3> add = (boneName, parent, position) =>
             {
                 var bone = new GameObject(boneName).transform;
-                bone.SetParent(parent == null ? root.transform : bones[parent], false);
+                bone.SetParent(parent == null ? boneRoot : bones[parent], false);
                 bone.localPosition = position * size;
                 bones.Add(boneName, bone);
             };

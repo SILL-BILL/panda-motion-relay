@@ -93,8 +93,8 @@ SillBill.PandaMotionRelay.MotionRelayEvaluation.ApplyPendingPoses();
 
 1. 対象TimelineとRelay Trackを設定し、**Play Modeに入ります**。EditorのPauseは解除してください。
 2. DirectorのGameObjectを選択し、`Tools > Panda Motion Relay > Bake Humanoid to Generic`を開きます。
-3. DirectorとRelay Trackを確認し、`Bake to New Animation Clip`で新しい`.anim`の保存先を選びます。
-4. サンプリング完了を待ちます。キャンセル可能です。既存Assetは上書きしません。
+3. DirectorとRelay Trackを確認し、`Bake Space`で`Local`（既定）または`Global`を選びます。
+4. `Bake to New Animation Clip`で新しい`.anim`の保存先を選び、サンプリング完了を待ちます。キャンセル可能です。既存Assetは上書きしません。
 
 BakeはPlay Mode専用です。Unityのアニメーション・標準Constraint・Relay LateUpdateを経たTarget実Transformを、次のUpdateで採録します。Game Viewが非表示でも進むよう、WaitForEndOfFrameには依存しません。
 元のPreview Graphを使い、終了・取消時にDirectorの時刻／更新モード／再生状態、読み込まれたSceneのTransform／Parent／Active／Renderer／Animator有効状態を復元します。
@@ -106,6 +106,14 @@ BakeはPlay Mode専用です。Unityのアニメーション・標準Constraint�
 | Target Animator.transform（Relay Motion Root ON時） | Parent空間のLocal Position + Quaternion Rotation |
 | Scale／Humanoid Mapping外のSecondary Bone | 出力なし |
 
+この表は既定の**Local**の出力です。現在のHierarchyと各FrameのParent空間を保持し、既存Phase 3と同じ結果になります。
+
+**Global**は、最終World MotionをHipsのPosition／Quaternion Rotationへ集約します。Bake範囲の最初の採録Frameを評価し、ConstraintとRelayの適用が終わった時点の**Hipsの親**のWorld行列・回転を固定します。以後のHips World Position／Rotationをこの固定空間へ変換して、通常の`m_LocalPosition`／`m_LocalRotation` Curveに保存します。現在Frameの親空間へ戻す処理ではないため、上位Root／Parentの移動と回転もHipsへ含まれます。
+
+Globalでも他のHumanoid BoneはLocal Quaternion Rotationのままです。`Relay Motion Root`はPreview生成には通常どおり使いますが、Global出力には別のAnimator Root Curveを生成しません。両ModeともScale／Secondary Bone Curveは生成しません。
+
+Global Clipは、採録開始時のReference Parentと同等の**静止階層**で再生してください。元のRoot／Parent Motionを上位階層でも同時再生すると二重移動になります。任意の原点／任意HierarchyでのWorld Pose一致、可変Scale・非一様Scale／Shearを含む全身の再現は保証しません。Output Root指定やCustom Reference Transformはありません。
+
 Boneは`Animator.GetBoneTransform()`で収集し、Pathは`AnimationUtility.CalculateTransformPath()`で生成します。
 回転は`m_LocalRotation.x/y/z/w`、位置は`m_LocalPosition.x/y/z`です。Quaternionの符号連続性を整えた後、Cut直前区間のTangentをConstantにして、境界をまたぐ自動Blendを防ぎます。
 
@@ -114,7 +122,7 @@ TimelineのFrame Rateで1Frameごとに記録し、保存Clipの時刻0を採録
 Clip境界はTimelineのFrameに揃えてください。Overlap、無効なTarget／Source、無効な出力先は採録前に拒否します。現在の上限は240fps・100000Frameです。
 
 Gapでは前後Sourceを合成せず、時刻順に採録した時点のTarget実Transformをそのまま記録します。他の制御がなければ、Gap直前のTarget姿勢が値として残ります。
-Motion RootはWorld PoseをそのFrameのTarget Parent空間に変換して保存します。Parentが固定の非Identity TransformでもWorld Motionを再現します。Parent自体が動く場合は、再生時にも同じParent Motionが必要です。
+LocalのMotion RootはWorld PoseをそのFrameのTarget Parent空間に変換して保存します。Parentが固定の非Identity TransformでもWorld Motionを再現します。LocalでParent自体が動く場合は、再生時にも同じParent Motionが必要です。Globalではこれらの最終結果をHipsへ集約します。
 
 出力は**同一HierarchyのTarget専用Generic Transform Clip**であり、Humanoid muscle Clipではありません。
 再生先は同一骨格のGeneric設定（Animator Avatarなし、または適切なGeneric Avatar）にしてください。Humanoid Avatarを通して再度リターゲットすると、保存値と再生姿勢が一致しない場合があります。

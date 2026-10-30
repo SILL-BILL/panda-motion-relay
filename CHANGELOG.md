@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased — Phase 3B
+
+- Add Local / Global Bake Space to the Humanoid Generic Bake window; default to Local with unchanged Phase 3 behavior.
+- In Global mode, freeze the Hips parent's reference matrix and rotation at the first fully evaluated sample, and fold final world Hips motion into that fixed space.
+- Keep other mapped bones in local quaternion rotation and omit separate Animator-root curves in Global mode to avoid double motion.
+- Retain exact-cut protection, gap sampling, overlap rejection, scale/secondary-bone exclusion and scene-state restoration.
+- Document replay on the equivalent frozen hierarchy without replaying ancestor motion a second time.
+
 ## Unreleased — Phase 3
 
 - Add a Play Mode Editor bake window and raw per-frame Generic Transform clip exporter for Humanoid targets.

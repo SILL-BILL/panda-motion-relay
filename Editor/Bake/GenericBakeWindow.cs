@@ -12,6 +12,7 @@ namespace SillBill.PandaMotionRelay.Editor
     {
         private PlayableDirector director;
         private int trackIndex;
+        [SerializeField] private BakeSpace bakeSpace = BakeSpace.Local;
 
         [MenuItem("Tools/Panda Motion Relay/Bake Humanoid to Generic")]
         public static void Open()
@@ -23,6 +24,12 @@ namespace SillBill.PandaMotionRelay.Editor
         private void OnGUI()
         {
             director = (PlayableDirector)EditorGUILayout.ObjectField("Director", director, typeof(PlayableDirector), true);
+            using (new EditorGUILayout.HorizontalScope())
+            {
+                EditorGUILayout.PrefixLabel("Bake Space");
+                if (GUILayout.Toggle(bakeSpace == BakeSpace.Local, "Local", EditorStyles.radioButton)) bakeSpace = BakeSpace.Local;
+                if (GUILayout.Toggle(bakeSpace == BakeSpace.Global, "Global", EditorStyles.radioButton)) bakeSpace = BakeSpace.Global;
+            }
             var timeline = director != null ? director.playableAsset as TimelineAsset : null;
             var tracks = timeline != null ? timeline.GetOutputTracks().OfType<MotionRelayTrack>().ToArray() : Array.Empty<MotionRelayTrack>();
             if (tracks.Length == 0) { EditorGUILayout.HelpBox("Select a Director with a Motion Relay Track.", MessageType.Info); return; }
@@ -36,7 +43,7 @@ namespace SillBill.PandaMotionRelay.Editor
                 {
                     string path = EditorUtility.SaveFilePanelInProject("Save Generic Bake", "PandaMotionRelay_Baked", "anim", "Choose a new asset path.");
                     if (string.IsNullOrEmpty(path)) return;
-                    var request = new GenericBakeRequest { director = director, track = tracks[trackIndex], outputPath = path };
+                    var request = new GenericBakeRequest { director = director, track = tracks[trackIndex], outputPath = path, bakeSpace = bakeSpace };
                     try { GenericBakeRunner.StartBake(request); }
                     catch (Exception exception) { EditorUtility.DisplayDialog("Bake could not start", exception.Message, "OK"); }
                 }

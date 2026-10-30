@@ -1,4 +1,34 @@
-# External development layout verification
+# Phase 3B Bake Space verification
+
+Verified on 2026-10-30 (Asia/Tokyo). Implementation on `feat/bake-space-local-global`, based on save point `87dee935`. The results below describe the approved Phase 3B implementation before its checkpoint.
+
+## Contract
+
+- Default request and window selection: Local. The existing Local root/hips/other-bone sampling paths are retained.
+- Global freezes the Hips parent's world-to-local matrix and world rotation at the first fully evaluated sample of the Relay bake range, after the existing Constraint/Relay apply point. It does not use the Director's pre-bake pose or update the reference on subsequent frames.
+- Global writes Hips position transformed by the fixed matrix and quaternion rotation relative to the fixed parent rotation, using standard local Transform curves. Other mapped bones still receive local quaternion rotation only.
+- Global omits separate Animator-root curves even with Relay Motion Root enabled; preview evaluation still uses the track setting normally.
+- Quaternion continuity, protected cut tangents, gap sampling, overlap rejection, scale/secondary-bone exclusion and restoration/cancellation remain in the existing pipeline.
+- Replay requires the equivalent frozen first-sample parent hierarchy. Do not replay the original ancestor motion simultaneously. Arbitrary output roots, custom reference transforms and animated/nonuniform scale or shear reproduction are not provided.
+
+## Tests
+
+The 67 existing cases are unchanged in outcome. Added 21 cases: default/invalid mode, overlap rejection, Local curve behavior with/without separate root, Global curve scope, upper-parent translation and rotation, a nonzero first-sample reference, Local/Global numeric comparison on the same Timeline, frozen-hierarchy Hips world replay, root-motion double-transfer prevention, cut frames, native ParentConstraint, scale/secondary-bone exclusion, scene restore, gap and cancellation.
+
+The generated comparison hierarchy is AnimatedParent → Character Animator → Armature → Hips. It animates the ancestor and Humanoid hips, and uses a non-identity Armature offset plus positive uniform scales. Each Global frame is replayed on an independent Generic hierarchy frozen at the first captured root pose. World Hips error must be below 0.001 m and 0.1 degrees. Other mapped-bone local rotations are checked independently. The Local/Global comparison verifies both bake modes sample the same final motion while producing different Hips curves, with parent-motion differences exceeding 1 m and 20 degrees. The Global cut case explicitly checks frame 23, frame 24 (incoming source), frame 25 and the sub-frame interval immediately before the cut at 24 fps.
+
+| Environment | Result |
+| --- | --- |
+| Unity 6000.0.84f1 / Timeline 1.8.13 | 88/88 passed, 0 failed/skipped; Console Error 0 / Warning 0 |
+| Unity 2022.3.22f1 / Timeline 1.7.6 | 88/88 passed, 0 failed/skipped; Console Error 0 / Warning 0 |
+
+Verified in the external sibling development projects; no package manifest or dependency changes. No private model or licensed asset was used. The connected MCP initially pointed to the separate test-data project, so writes and execution used Unity CLI with the primary project's explicit path. A temporary LocalOnly test-result observer exported the complete Unity 6 XML across domain reloads and was then removed; package tests do not depend on it.
+
+Initial new Play Mode test wrappers failed during their own domain-reload initialization. Moving EnterPlayMode/ExitPlayMode into each test's iterator, matching the existing tests, resolved this. The complete corrected run passed all 88 cases; earlier diagnostic results are retained locally without being counted as the final verification.
+
+Evidence: `Development~/LocalOnly/Verification/Phase3B/` (complete Unity 6 XML, CLI summary, UI state, Console samples and compatibility results).
+
+# External development layout verification (historical)
 
 Verified on 2026-10-27 (Asia/Tokyo). Phase 3 was approved and checkpointed as `5bfaa9b2d33728b2db8e7bd7082b620b4673097f` (`feat: add humanoid-mapped generic bake`). Migration work is on `chore/externalize-development-projects`.
 

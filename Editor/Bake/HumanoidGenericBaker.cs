@@ -11,11 +11,18 @@ using Object = UnityEngine.Object;
 
 namespace SillBill.PandaMotionRelay.Editor
 {
+    public enum BakeSpace
+    {
+        Local,
+        Global
+    }
+
     public sealed class GenericBakeRequest
     {
         public PlayableDirector director;
         public MotionRelayTrack track;
         public string outputPath;
+        public BakeSpace bakeSpace = BakeSpace.Local;
         public Action<float> progress;
         public Func<bool> cancel;
     }
@@ -30,6 +37,8 @@ namespace SillBill.PandaMotionRelay.Editor
         {
             if (request == null || request.director == null || request.track == null)
                 throw new ArgumentException("Select a PlayableDirector and a Motion Relay Track.");
+            if (request.bakeSpace != BakeSpace.Local && request.bakeSpace != BakeSpace.Global)
+                throw new ArgumentException("Select Local or Global Bake Space.");
             var timeline = request.director.playableAsset as TimelineAsset;
             if (timeline == null || !timeline.GetOutputTracks().Contains(request.track) || request.track.mutedInHierarchy)
                 throw new ArgumentException("The selected track must be an enabled output track of the director's Timeline.");
@@ -109,10 +118,11 @@ namespace SillBill.PandaMotionRelay.Editor
             long first = (long)Math.Round(clips[0].start * fps);
             long last = (long)Math.Round(clips[clips.Length - 1].end * fps);
             var channels = new List<BoneCurves>();
-            if (request.track.relayMotionRoot) channels.Add(new BoneCurves(target.transform, "", true, true));
+            bool global = request.bakeSpace == BakeSpace.Global;
+            if (request.track.relayMotionRoot && !global) channels.Add(new BoneCurves(target.transform, "", true, true));
             var hips = target.GetBoneTransform(HumanBodyBones.Hips);
             foreach (var bone in MappedBones(target))
-                channels.Add(new BoneCurves(bone, AnimationUtility.CalculateTransformPath(bone, target.transform), bone == hips, false));
+                channels.Add(new BoneCurves(bone, AnimationUtility.CalculateTransformPath(bone, target.transform), bone == hips, false, global && bone == hips));
             var originalTime = director.time;
             var originalMode = director.timeUpdateMode;
             var originalState = director.state;
@@ -201,27 +211,42 @@ namespace SillBill.PandaMotionRelay.Editor
             private readonly string path;
             private readonly bool position;
             private readonly bool root;
+            private readonly bool globalHips;
+            private Matrix4x4 referenceWorldToLocal;
+            private Quaternion referenceWorldRotation;
+            private bool hasReference;
             private readonly List<Keyframe>[] keys;
             private Quaternion previous;
             private bool hasPrevious;
 
-            public BoneCurves(Transform bone, string path, bool position, bool root)
+            public BoneCurves(Transform bone, string path, bool position, bool root, bool globalHips = false)
             {
                 this.bone = bone; this.path = path; this.position = position; this.root = root;
+                this.globalHips = globalHips;
                 keys = new List<Keyframe>[position ? 7 : 4];
                 for (int i = 0; i < keys.Length; i++) keys[i] = new List<Keyframe>();
             }
 
             public void Sample(float time)
             {
-                var rotation = root && bone.parent != null ? Quaternion.Inverse(bone.parent.rotation) * bone.rotation : bone.localRotation;
+                if (globalHips && !hasReference)
+                {
+                    // Sample is called only after the first frame's constraints and relay apply.
+                    // Keep values, not a live Transform, so subsequent ancestor motion is retained.
+                    referenceWorldToLocal = bone.parent != null ? bone.parent.worldToLocalMatrix : Matrix4x4.identity;
+                    referenceWorldRotation = bone.parent != null ? bone.parent.rotation : Quaternion.identity;
+                    hasReference = true;
+                }
+                var rotation = globalHips ? Quaternion.Inverse(referenceWorldRotation) * bone.rotation :
+                    root && bone.parent != null ? Quaternion.Inverse(bone.parent.rotation) * bone.rotation : bone.localRotation;
                 if (hasPrevious && Quaternion.Dot(previous, rotation) < 0)
                     rotation = new Quaternion(-rotation.x, -rotation.y, -rotation.z, -rotation.w);
                 previous = rotation; hasPrevious = true;
                 keys[0].Add(new Keyframe(time, rotation.x)); keys[1].Add(new Keyframe(time, rotation.y));
                 keys[2].Add(new Keyframe(time, rotation.z)); keys[3].Add(new Keyframe(time, rotation.w));
                 if (!position) return;
-                var value = root && bone.parent != null ? bone.parent.InverseTransformPoint(bone.position) : bone.localPosition;
+                var value = globalHips ? referenceWorldToLocal.MultiplyPoint3x4(bone.position) :
+                    root && bone.parent != null ? bone.parent.InverseTransformPoint(bone.position) : bone.localPosition;
                 keys[4].Add(new Keyframe(time, value.x)); keys[5].Add(new Keyframe(time, value.y)); keys[6].Add(new Keyframe(time, value.z));
             }
 
