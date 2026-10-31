@@ -1,3 +1,76 @@
+# Phase 3C Evaluation Director verification
+
+Verified on 2026-10-31 (Asia/Tokyo). Implementation on `feat/bake-evaluation-director`, based on `e598a7953e3c6f49d5bb6f9e7f41818bcf435d7a`. Changes remain uncommitted and unpushed pending maintainer approval.
+
+## Design and changed files
+
+- `Editor/Bake/HumanoidGenericBaker.cs`: adds optional `GenericBakeRequest.evaluationDirector`. Existing `director` remains the Relay Director for track ownership, target binding, Source exposed references, frame rate and bake range. The Evaluation Director defaults to it.
+- `Editor/Bake/BakeEvaluationScope.cs` and its `.meta`: inspect enabled ControlTracks with `ControlPlayableAsset.updateDirector`, resolving sources against the Evaluation Director. Exactly one direct clip must control the Relay Director. Map each Relay time with `control.start + (relayTime - control.clipIn) / control.timeScale` and validate the entire range before evaluation.
+- `Editor/Bake/BakeDirectorState.cs` and its `.meta`: snapshot the Evaluation Director and its directly controlled Directors; restore clocks, update modes, playback states, graph validity and root-playable speeds. Restore parents before children, rebuilding a previously live child graph if parent teardown destroyed it. Discard deferred pose writes after restoration, then restore the existing scene snapshot.
+- `Editor/Bake/GenericBakeWindow.cs`: exposes Relay Director and optional Evaluation Director without adding a mapping mode.
+- `Tests/Editor/EvaluationDirectorBakeTests.cs` and its `.meta`: 31 new generated-rig cases, alongside the existing 88 cases.
+- `README.md`, `CHANGELOG.md`, `VERIFICATION.md`: usage, scope and measured verification.
+
+Only the Evaluation Director advances during sampling. Each evaluation still yields one player-loop frame for native constraints before `ApplyPendingPoses()` and target sampling. Local/Global curve math, quaternion continuity, cut tangents and runtime relay code are unchanged.
+
+## First sample and restoration
+
+The earlier diagnostic recorded a null mixer Source at frame 0. That symptom did not reproduce in the generated nested bake regression: with all three graphs stopped, the target deliberately moved to an incorrect pose and the Control Clip activation enabled, the first sample selects the expected actual mixer Source and matches the reference pose. The real-data bake also selects `Yanagi_001` at frame 0. No frame is skipped or shifted, and no additional baker priming pass was necessary. The reference capture initializes its graph at time 0; the baker itself retains one Master evaluation and one native-frame wait per sample.
+
+Normal completion, cancellation and an injected sampling exception verify all three Directors' time, update mode, play state and graph validity plus target scene restoration. Additional cases cover initially invalid/mixed graphs and initially playing Directors. An early mixed-graph test exposed delayed child graph destruction during parent teardown; restoration now rebuilds the original child graph after that teardown has drained.
+
+## Automated verification
+
+| Environment | Compilation | Full test result | Final Console |
+| --- | --- | --- | --- |
+| Unity 6000.0.84f1 / Timeline 1.8.13 | Passed | 119 passed, 0 failed, 0 skipped | Errors 0, warnings 0 |
+| Unity 2022.3.22f1 / Timeline 1.7.6 | Passed | 119 passed, 0 failed, 0 skipped; process exit 0 | Errors 0, expected headless warning 1, unexpected warnings 0 |
+
+Unity 6 completed first, including the real-data smoke, followed by the Unity 2022 compatibility gate. Both full XML files contain all 119 passing leaf cases; the 31 new cases are in addition to the retained 88. Unity 6 used the connected Editor/Unity CLI, and Unity 2022 used `-batchmode -nographics -runTests -testPlatform EditMode`. No Unity 6-only package API was introduced.
+
+The Unity 2022 warning was confirmed by a targeted Console-message probe: `GfxDevice renderer is null`, so Unity cannot update ambient/reflection probes under `-nographics`. It is an expected rendering-environment warning, not a package/test warning. The initial cold incremental build briefly referenced its old source list before discovering the two new Editor files; Bee automatically reran the build successfully in the same invocation. The final Console had no compile errors, and the subsequent targeted probe compilation was also clean. No Library deletion was needed.
+
+Unity 6's CLI history buffer still contains earlier diagnostic events; the final live Console counts above come from its `groundTruth` counters, not that history. A local test observer preserves the complete XML across Play Mode domain reloads; the package tests do not depend on the observer. Unity 2022 evidence is in the external project's `WorkSpace/phase3c-tests.xml`, `phase3c-tests.log`, `phase3c-console.txt` and `phase3c-console-messages.txt`.
+
+The 31 added cases cover default/single Director behavior; start offset, clipIn, speed and combined time mapping; unsafe mapping rejection; sibling Prop-driven ParentConstraint; cuts; actual frame-0 Source; Local/Global playback; and normal/cancel/exception/playing/graph restoration. The Constraint regression deliberately demonstrates a difference above 1 unit when only the Character child is evaluated, then checks Master evaluation against bake samples. All rigs and clips are generated; tests do not depend on private production assets.
+
+An intermediate single-Director test failed because its fixture evaluated the Master between its child-only reference and bake, moving the sibling Prop input. Removing that unrelated fixture evaluation restored the intended comparison; no production sampling change was needed for that failure. Earlier failed runs and individual reruns are retained locally and are not the final full-suite result.
+
+## Real-data Local and Global smoke test
+
+Unity 6000.0.84f1, copied scene `Assets/LocalOnly/MotionRelaySmoke/01_RelayValidation.unity`. Original imported scene and Timelines were not edited. Relay Director: `TL_Test_Character`; Evaluation Director: Master `TL_Test`; sibling Prop Director: `TL_Test_Prop`; target Humanoid Animator: `Yanagi_Bake`. Relay Motion Root enabled. The unique direct Control Clip has start 0, clipIn 0, speed 1.
+
+Compared 375 samples at 24 fps (frames 0 through terminal frame 374), measuring the same target's Hips, Head, both Hands, both Feet and LeftIndexDistal world position and rotation. These are target-preview versus target-bake comparisons, not source/target retargeting differences. The earlier child-only diagnostic measured 8.00353 units / 179.34377 degrees maximum error; the new Master-scoped sample comparison is zero.
+
+| Measurement | Local | Global |
+| --- | --- | --- |
+| Maximum sampling position error, Unity units | 0 | 0 |
+| Maximum sampling rotation error, degrees | 0 | 0 |
+| Maximum clip replay position error, Unity units | 0.000000999156 | 0.00000953731 |
+| Maximum clip replay rotation error, degrees | 0 | 0 |
+| Scale curves | 0 | 0 |
+| Unmapped / secondary-bone curves | 0 | 0 |
+| Animator-root curves | 7 (position + quaternion) | 0 |
+| Unexpected Source selections, frames 0–373 | 0 | 0 |
+| All three Director states restored | Yes | Yes |
+| Result (position < 0.001, angle < 0.1 degrees) | PASS | PASS |
+
+Local replay uses an independent Generic hierarchy under the same evaluated parent; Global uses an independent hierarchy frozen at the first-sample parent/root pose, with no ancestor animation. Global was performed only after the Local sampling/replay/curve/state checks passed. Both generated clips are new local assets, not overwrites of the previous failed smoke clip.
+
+The ParentConstraint-driven interval, including frame 144 where the earlier discrepancy began at `ConSrc`, matches Master preview. Actual mixer ownership is Normal (`Yanagi_001`) at frames 0 and 137, Float (`Yanagi_001_RD`) at 138 and 239, and Normal at 240. Terminal frame 374 has no active Relay Source, consistent with the existing half-open interval rule. There is no hidden blend or source timing change.
+
+Local evidence in the external Unity 6 project's `WorkSpace/phase3c/`: complete test XML/event log, `reference-frame-zero.json`, `Local.json`, `Global.json`, `status.txt`, and the local smoke harness. Generated clips: `Assets/LocalOnly/MotionRelaySmoke/Baked/Phase3C_Local.anim` and `Phase3C_Global.anim`. These private/local artifacts are outside the package repository.
+
+## Limits and repository safety
+
+This phase supports one unambiguous direct Master-to-Relay Control Clip. It rejects missing/multiple clips, ambiguous hierarchy search, prefab-instantiated Directors, multilevel control, nonpositive/nonfinite speed, out-of-range mapping and child-time wrapping. Arbitrary nested traversal, split Control Clips, custom mapping UI, key reduction, Generic mapping and blending remain outside scope. Global still requires the equivalent frozen reference hierarchy; arbitrary nonuniform/sheared hierarchy reproduction is not claimed.
+
+No runtime/package dependency, minimum Unity version or VRChat dependency change. This phase does not claim VRChat upload/client verification or real PhysBone simulation. The real-data smoke was performed in Unity 6; the Unity 2022 gate uses generated automated tests.
+
+Final repository check: only the five modified source/document files and six new source/meta files listed above; index empty, no LocalOnly/WorkSpace/private assets staged, `git diff --check` passed, HEAD unchanged at the baseline. Unity 6 is left outside Play Mode with the copied validation scene and Bake Window open, Relay set to Character and Evaluation set to Master.
+
+---
+
 # Phase 3B Bake Space verification
 
 Verified on 2026-10-30 (Asia/Tokyo). Implementation on `feat/bake-space-local-global`, based on save point `87dee935`. The results below describe the approved Phase 3B implementation before its checkpoint.

@@ -93,11 +93,16 @@ SillBill.PandaMotionRelay.MotionRelayEvaluation.ApplyPendingPoses();
 
 1. 対象TimelineとRelay Trackを設定し、**Play Modeに入ります**。EditorのPauseは解除してください。
 2. DirectorのGameObjectを選択し、`Tools > Panda Motion Relay > Bake Humanoid to Generic`を開きます。
-3. DirectorとRelay Trackを確認し、`Bake Space`で`Local`（既定）または`Global`を選びます。
-4. `Bake to New Animation Clip`で新しい`.anim`の保存先を選び、サンプリング完了を待ちます。キャンセル可能です。既存Assetは上書きしません。
+3. `Relay Director`にMotion Relay Trackを持つDirectorを指定し、Relay Trackを選びます。単一Timelineでは`Evaluation Director`を空欄（Relay Directorと同じ）にします。CharacterとPropを子Timelineで制御する場合は、それらをまとめるMaster Directorを`Evaluation Director`に指定します。
+4. `Bake Space`で`Local`（既定）または`Global`を選びます。
+5. `Bake to New Animation Clip`で新しい`.anim`の保存先を選び、サンプリング完了を待ちます。キャンセル可能です。既存Assetは上書きしません。
 
 BakeはPlay Mode専用です。Unityのアニメーション・標準Constraint・Relay LateUpdateを経たTarget実Transformを、次のUpdateで採録します。Game Viewが非表示でも進むよう、WaitForEndOfFrameには依存しません。
-元のPreview Graphを使い、終了・取消時にDirectorの時刻／更新モード／再生状態、読み込まれたSceneのTransform／Parent／Active／Renderer／Animator有効状態を復元します。
+元のPreview Graphを使い、終了・取消・例外時にEvaluation／Relayと直接制御される子Directorの時刻／更新モード／再生状態／Graph有無、読み込まれたSceneのTransform／Parent／Active／Renderer／Animator有効状態を復元します。親Graphの停止で子Graphが破棄された場合は、開始時に存在したGraphを再構築します。
+
+Nested Bakeは、MasterからRelay Directorを直接制御する有効なControl Clipが1本だけの構成に対応します。BindingとSource解決はRelay Directorが担当し、実際の評価はMasterだけを進めます。Relay時刻からMaster時刻へは `control.start + (relayTime - control.clipIn) / control.timeScale` で変換します。Frame Rateと採録範囲はRelay Timeline基準です。
+
+Control Clip内に全採録範囲が収まる必要があります。複数Control Clipでの分割、曖昧なsearchHierarchy、Prefabから生成するDirector、多段Nested制御、ループするRelay時間は拒否します。実行前に制作Sceneを保存してください。
 
 | 対象 | 出力Curve |
 | --- | --- |

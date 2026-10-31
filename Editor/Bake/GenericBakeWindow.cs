@@ -11,6 +11,7 @@ namespace SillBill.PandaMotionRelay.Editor
     public sealed class GenericBakeWindow : EditorWindow
     {
         private PlayableDirector director;
+        private PlayableDirector evaluationDirector;
         private int trackIndex;
         [SerializeField] private BakeSpace bakeSpace = BakeSpace.Local;
 
@@ -23,7 +24,10 @@ namespace SillBill.PandaMotionRelay.Editor
 
         private void OnGUI()
         {
-            director = (PlayableDirector)EditorGUILayout.ObjectField("Director", director, typeof(PlayableDirector), true);
+            director = (PlayableDirector)EditorGUILayout.ObjectField("Relay Director", director, typeof(PlayableDirector), true);
+            evaluationDirector = (PlayableDirector)EditorGUILayout.ObjectField("Evaluation Director", evaluationDirector, typeof(PlayableDirector), true);
+            if (evaluationDirector == null)
+                EditorGUILayout.HelpBox("Evaluation Director is optional. When empty, the Relay Director supplies the sampling clock.", MessageType.Info);
             using (new EditorGUILayout.HorizontalScope())
             {
                 EditorGUILayout.PrefixLabel("Bake Space");
@@ -43,7 +47,7 @@ namespace SillBill.PandaMotionRelay.Editor
                 {
                     string path = EditorUtility.SaveFilePanelInProject("Save Generic Bake", "PandaMotionRelay_Baked", "anim", "Choose a new asset path.");
                     if (string.IsNullOrEmpty(path)) return;
-                    var request = new GenericBakeRequest { director = director, track = tracks[trackIndex], outputPath = path, bakeSpace = bakeSpace };
+                    var request = new GenericBakeRequest { director = director, evaluationDirector = evaluationDirector, track = tracks[trackIndex], outputPath = path, bakeSpace = bakeSpace };
                     try { GenericBakeRunner.StartBake(request); }
                     catch (Exception exception) { EditorUtility.DisplayDialog("Bake could not start", exception.Message, "OK"); }
                 }

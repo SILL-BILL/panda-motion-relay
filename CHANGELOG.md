@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased — Phase 3C
+
+- Separate optional Evaluation Director from Relay Director for direct Master/Child Timeline baking; omitted evaluation preserves the single-Director API.
+- Resolve the unique Control Clip and map Relay time using start, clipIn and timeScale; reject ambiguous, out-of-range, looping, prefab-instantiated and multi-level control configurations.
+- Evaluate Character and Prop timelines through the Master while keeping binding and exposed-reference resolution on the Relay Director.
+- Restore affected Director clocks, playback modes, states and graph validity, including cancellation and exceptions.
+- Add generated nested Constraint, mapping, exact-cut, first-sample, Local/Global replay and restoration regression coverage.
+
 ## Unreleased — Phase 3B
 
 - Add Local / Global Bake Space to the Humanoid Generic Bake window; default to Local with unchanged Phase 3 behavior.

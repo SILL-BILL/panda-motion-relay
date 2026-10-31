@@ -20,6 +20,7 @@ namespace SillBill.PandaMotionRelay.Editor
     public sealed class GenericBakeRequest
     {
         public PlayableDirector director;
+        public PlayableDirector evaluationDirector;
         public MotionRelayTrack track;
         public string outputPath;
         public BakeSpace bakeSpace = BakeSpace.Local;
@@ -69,6 +70,7 @@ namespace SillBill.PandaMotionRelay.Editor
             }
             if ((previousEnd - clips[0].start) * fps > 100000)
                 throw new ArgumentException("Bake range exceeds 100000 frames. Split the Timeline before baking.");
+            new BakeEvaluationScope(request, clips[0].start, previousEnd);
             var paths = new HashSet<string>();
             foreach (var bone in MappedBones(target))
                 if (bone == target.transform || !bone.IsChildOf(target.transform) || !paths.Add(AnimationUtility.CalculateTransformPath(bone, target.transform)))
@@ -123,24 +125,21 @@ namespace SillBill.PandaMotionRelay.Editor
             var hips = target.GetBoneTransform(HumanBodyBones.Hips);
             foreach (var bone in MappedBones(target))
                 channels.Add(new BoneCurves(bone, AnimationUtility.CalculateTransformPath(bone, target.transform), bone == hips, false, global && bone == hips));
-            var originalTime = director.time;
-            var originalMode = director.timeUpdateMode;
-            var originalState = director.state;
-            bool originalGraphValid = director.playableGraph.IsValid();
+            var scope = new BakeEvaluationScope(request, first / fps, last / fps);
+            var directorState = new BakeDirectorState(scope.Directors);
             var scene = new BakeSceneState();
             AnimationClip result = null;
             bool saved = false;
             try
             {
-                director.Pause();
-                director.timeUpdateMode = DirectorUpdateMode.Manual;
+                directorState.Prepare();
                 // Reuse the preview graph: rebuilding can change AnimationTrack scene offsets
                 // and its defaults for channels not explicitly animated by a driver clip.
                 for (long frame = first; frame <= last; frame++)
                 {
                     if (request.cancel != null && request.cancel()) throw new OperationCanceledException("Bake canceled.");
-                    director.time = frame / fps;
-                    director.Evaluate();
+                    scope.Evaluation.time = scope.EvaluationTime(frame / fps);
+                    scope.Evaluation.Evaluate();
                     // A normal coroutine resumes on the following Update, after the evaluated
                     // frame's ConstraintManager and Relay LateUpdate. Avoid WaitForEndOfFrame,
                     // which can stall in batch mode or while the Game view is not visible.
@@ -179,18 +178,8 @@ namespace SillBill.PandaMotionRelay.Editor
             {
                 try
                 {
-                    if (director != null)
-                    {
-                        if (!originalGraphValid) director.Stop();
-                        director.timeUpdateMode = originalMode;
-                        director.time = originalTime;
-                        if (originalGraphValid) director.Evaluate();
-                        if (originalState == PlayState.Playing) director.Play();
-                        else director.Pause();
-                        director.time = originalTime;
-                        MotionRelayEvaluation.DiscardPendingPoses(director);
-                    }
-                    scene.Restore();
+                    try { directorState.Restore(); }
+                    finally { scene.Restore(); }
                 }
                 finally
                 {
