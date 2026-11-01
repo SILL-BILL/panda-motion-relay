@@ -2,6 +2,8 @@
 
 ## Unreleased — Phase 3C
 
+- Documentation: add a Japanese production-use manual, reorganize the README as a Quick Start, and label version 0.1.0 as Production Preview / Internal Production Use.
+- Verification: confirm clean local-UPM installation in Unity 6 / Unity 2022.3, HTTPS Branch / Commit-ref installation, and generated Humanoid Preview plus Local/Global Bake; retain Local/Global, nested Timeline and baked-output VRChat workflows.
 - Verification / documentation: record production-like Local/Global bake results in standard Unity 2022.3 and baked-output inspection in VRC SDK 3.10.6 / ClientSim ON, including Global Generic Animator Controller playback.
 - Documentation: recommend baking in standard Unity and inspecting baked clips in VCC; record the unresolved, non-blocking VCC Relay Preview frame-138 root discrepancy.
 - Separate optional Evaluation Director from Relay Director for direct Master/Child Timeline baking; omitted evaluation preserves the single-Director API.

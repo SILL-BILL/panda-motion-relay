@@ -1,3 +1,62 @@
+# Production Preview / UPM Clean Installation Verification
+
+Verified on 2026-11-01 (Asia/Tokyo), preparation branch `chore/production-preview-prep`, based on `a8003ec7347d5c55b805af47c623cfaa49cf6ea3`. Readiness: **READY WITH LIMITATIONS** for Production Preview / Internal Production Use. Documentation is prepared locally and remains uncommitted/unpushed for maintainer review; no new release/tag or main merge.
+
+## Package and documentation audit
+
+`com.sillbill.panda-motion-relay`, display name Panda Motion Relay, version 0.1.0, minimum Unity 2022.3.22f1, Timeline dependency 1.7.6, MIT license and author Gonsaku are retained without modifying package.json. Runtime/Editor separation and Editor-only Tests assembly definitions are unchanged. No VRC SDK, Unity MCP or development-tool dependency is introduced.
+
+Required package structure, README, CHANGELOG and LICENSE are present. `Development~/` contains setup documentation rather than a Unity project. The delivered Git package contained 74 files with no LocalOnly/WorkSpace, development project, private model, UnityPackage, image/video evidence, test XML, logs or local configuration. Repository Git metadata is not an installed package asset. The new `Documentation~/Manual.md` is plain package documentation: local import did not create `Documentation~.meta`; no speculative `.meta` files were added.
+
+README now serves as the overview, status, installation and Quick Start entry. Its old nested-development-project instruction and pre-bake status text were replaced; useful detailed behavior, script sampling notes and development references were retained in the Japanese 20-chapter Manual. The Manual explains terms, generated-independent user setup, Source/Target selection, exact cuts, root transfer, Local/Global bake/replay, nested evaluation, VRChat workflow and troubleshooting. Links to local files were checked. No private production character names or credentials are used in the Manual.
+
+## Clean installation and minimum smoke
+
+Four new, non-Git Unity projects were created outside the package repository, with no VRC SDK, MCP or private test assets. Actual UPM requests used `UnityEditor.PackageManager.Client.Add`: local `file:` requests exercise the backend used by Add package from disk; HTTPS requests exercise Git package installation. The Package Manager GUI dialogs themselves were not clicked during these batch tests.
+
+| Clean project / Unity | Installed request | Resolved source / Timeline | Result |
+| --- | --- | --- | --- |
+| Local / 6000.0.84f1 | Local repository folder (`file:`) | Local, version 0.1.0 / Timeline 1.8.13 | PASS |
+| Local / 2022.3.22f1 | Local repository folder (`file:`) | Local, version 0.1.0 / Timeline 1.7.6 | PASS |
+| Git / 6000.0.84f1 | HTTPS Branch URL below | Git commit a8003ec / Timeline 1.8.13 | PASS |
+| Git / 2022.3.22f1 | HTTPS Commit URL below | Git commit a8003ec / Timeline 1.7.6 | PASS |
+
+Both local requests resolved PackageInfo.resolvedPath to the sibling package repository, not a copied package source. Git requests resolved into each project's Library/PackageCache; packages-lock recorded the intended commit. Compile errors 0 in final runs. Each of the four projects invoked the Panda bake menu and constructed its Bake Window, created the Timeline/Relay Track, bound a generated Humanoid Target, assigned two generated Humanoid Sources, and verified Play Mode source-root cuts at frames 23/24/25 and 47/48/49 with Target active. Each generated Local and Global bake successfully. Normal-use smoke ran **without testables**; users do not need the test setup below.
+
+Verified exact Git URLs:
+
+```text
+https://github.com/SILL-BILL/panda-motion-relay.git#feat/bake-evaluation-director
+https://github.com/SILL-BILL/panda-motion-relay.git#a8003ec7347d5c55b805af47c623cfaa49cf6ea3
+```
+
+HTTPS read without credentials was also verified. Branch versus Commit formats are documented only after successful UPM installs; SSH installation was not tested. These URLs currently deliver the approved checkpoint's code and its older documentation. The new Manual will not appear in a remote package until the maintainer approves a later documentation commit/push. No claim is made that the uncommitted prep branch has been published.
+
+## Clean automated tests and build isolation
+
+After the normal-use smoke, the two local clean projects explicitly added Test Framework and `testables` for developer verification only.
+
+| Environment | Framework resolved | Tests | Process / final Console |
+| --- | --- | --- | --- |
+| Clean Unity 6000.0.84f1 | 1.6.0, editor builtin (manifest request 1.4.6) | 119 passed, 0 failed/skipped | Exit 0; errors 0 / warnings 0 |
+| Clean Unity 2022.3.22f1 | 1.1.33 | 119 passed, 0 failed/skipped | Exit 0; errors 0 / expected headless warning 1 |
+
+Both XML files contain 119 passing leaf cases. The Unity 2022 warning corresponds to the headless GfxDevice ambient/reflection-probe notice. Early install-helper compilation required qualifying PackageInfo to avoid two Unity types with that name; the first Unity 6 smoke helper also emitted a deprecated FindObjectOfType warning. These were external verification-helper issues, not package source failures; later Git smoke used the supported FindObjectsByType API. No package implementation change was needed.
+
+CompilationPipeline's Player assembly list excluded both Panda Editor and Tests assemblies in all four normal-use projects. This verifies assembly selection, not a standalone Player build/export. No private asset is needed by the generated smoke or package tests.
+
+## Manual usability and VCC read-only check
+
+The agent reproduced the Manual's single-Timeline setup sequence using generated Humanoid rigs and public Unity/package APIs, without using private scenes or previous development notes as setup instructions. The steps covered named Driver/Target objects, normal Animation Tracks, Relay Binding/Source, the Manual's 24fps three-clip sequence, root transfer, Play Mode cuts, Bake Window and both bake spaces. This assisted walkthrough passed in the four clean projects. It prompted explicit Manual instructions for selecting the Timeline Asset's Frame Rate and distinguishing seconds from frames, selecting the Humanoid Animator rather than a root-only Animator, and preparing Generic/frozen replay hierarchies.
+
+This is an **API-assisted walkthrough**, not an independent novice user study or an end-to-end mouse/keyboard GUI test. Menu registration/window construction were exercised; complete visual interaction with every Package Manager/Timeline inspector control remains a manual acceptance check. This is the readiness qualification rather than a package-code blocker.
+
+The existing VCC project's Package Manager cache was inspected read-only: version 0.1.0, Local source, resolved to the same repository, errors empty, package not testable by default. Panda Runtime/Editor assemblies are present, and the prior SDK 3.10.6 / ClientSim baked-output inspection Console remains errors 0. No new VCC runtime smoke, SDK/settings modification or claim of direct VCC Relay Preview compatibility was introduced by this preparation.
+
+Evidence remains in each external clean project's WorkSpace: install request/result, smoke setup/result, UPM lock data, logs and full local-project test XML. The Japanese Manual and README are the user instructions; this section records the actual automation scope. Existing limitations, including the non-blocking VCC frame-138 Relay Preview discrepancy, remain applicable. VRChat upload/client, Quest and full PhysBone simulation remain unverified.
+
+---
+
 # Phase 3C Evaluation Director verification
 
 Verified on 2026-10-31 (Asia/Tokyo). Implementation on `feat/bake-evaluation-director`, based on `e598a7953e3c6f49d5bb6f9e7f41818bcf435d7a`, subsequently checkpointed as `1f6d4ad7794bf62cb3c57240f61694eb42e889f4`. The original verification below describes the implementation before that checkpoint; later cross-version and VCC results follow in the next section.
