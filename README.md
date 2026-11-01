@@ -17,9 +17,9 @@ Driver_Float  ─┘
 
 ## 現在のステータス
 
-**0.1.0 — Production Preview / Internal Production Use**（実戦投入前プレビュー版・社内／個人制作向け）。Exact Cut、Humanoid姿勢転送、オプションのMotion Root転送、Local／Global Bake、一意な直接Master/Child構成の評価に対応します。
+**0.1.0 — Production Preview / Internal Production Use**（実戦投入前プレビュー版・社内／個人制作向け）。Exact Cut、Humanoid姿勢転送、オプションのMotion Root転送、3方式のBake、一意な直接Master/Child構成の評価に対応します。
 
-Unity 6／通常Unity 2022.3で各119自動テストと実戦BakeがPASS。VCCではBake済み成果物のClientSim ON検品がPASSしています。すべてのUnity／VRChat環境を保証する段階ではありません。
+Unity 6／通常Unity 2022.3で既存119件を含む各142自動テストと実戦BakeがPASS。World → RootはNative Generic Animator Controller再生も検証済みです。すべてのUnity／VRChat環境を保証する段階ではありません。
 
 ## インストール
 
@@ -37,25 +37,28 @@ ProjectをPackage Repositoryの内側に作らないでください。導入の�
 
 Humanoidモデルとモーションを用意した状態から始めます。初回は同じ骨格のコピーをDriver2体・Target1体として使うと確認が容易です。
 
-1. 3体のHumanoid Animatorと親階層をActiveにし、Sceneを保存します。
+1. Driver全員とTargetの本体・Animator・親階層を常時Activeにします。Driverを非ActiveにするActivation Trackはミュートし、隠す場合はRendererだけをOFFにしてSceneを保存します。
 2. 空Objectを選び、Timelineウィンドウの`Create`でTimeline AssetとPlayableDirectorを用意します。
 3. 通常のAnimation TrackをDriver AnimatorへBindingし、Driverのモーションを配置します。
 4. `Motion Relay Track`を追加し、TargetのHumanoid AnimatorへBindingします。
 5. `Motion Relay Clip`を3本追加し、各Clipの`Source`へNormal／Float／NormalのDriver Animatorを指定します。例：24fpsで`[0,24) [24,48) [48,72)`。
 6. TimelineをScrub／Playして、Frame 23→24、47→48で転送元が正確に切り替わることを確認します。
 7. Rootも転送する場合だけTrackの`Relay Motion Root`をONにします。Driverメッシュを隠す場合はRendererだけをOFFにします。
-8. Scene保存後、Play Mode・Pause解除にして`Tools > Panda Motion Relay > Bake Humanoid to Generic`を開き、Director・Track・Bake Spaceを指定して新規`.anim`へ保存します。
+8. Scene保存後、Play Mode・Pause解除にして`Tools > Panda Motion Relay > Bake Humanoid to Generic`を開き、Director・身体側Relay Track・`Bake Mode`を指定して新規`.anim`へ保存します。
 
 Exact Cutは`start <= t < end`です。Overlapは無効、Gapは新たな転送なし。詳細操作は[正式マニュアル](Documentation~/Manual.md)を参照してください。
 
-## Local / Globalの使い分け
+## Bake Modeの選び方
 
 | 目的 | 選択 | 再生条件 |
 | --- | --- | --- |
-| 現在のRoot／Character階層やParent Animationを維持 | Local（既定） | 同一骨格・同等のParent Motion |
-| 最終World MotionをHipsへ集約 | Global | 開始Frameの固定Reference階層。元Root／Parent Motionを重ねない |
+| 元の親階層を再利用 | Local — Use Existing Parent（既定） | 同一骨格・同等のParent Motion |
+| 親なし独立モデルでRootのWorld動作も再現 | World — Record Motion to Root | Identity Parent、開始Frameと同等の内部SkeletonとCharacter一定Scale |
+| 独立モデルで全体移動をHipsへ集約 | World — Consolidate Motion to Hips（旧Global） | 開始Frameの固定Reference階層。元Root／Parent Motionを重ねない |
 
-成果物はHumanoid muscle Clipではなく、同一HierarchyのTarget専用Generic Transform Clipです。Humanoid再Retargetでの一致は保証しません。両ModeともScale／Secondary Curveは出しません。LocalはMotion Root ON時にRoot Curveを持ち、GlobalはRoot Curveを持ちません。
+成果物はHumanoid muscle Clipではなく、同一内部HierarchyのTarget専用Generic Transform Clipです。Humanoid再Retargetでの一致は保証しません。全方式でScale／Secondary Curveは出しません。LocalはRelay Motion Root ON時にRoot Curveを持ち、World → Rootは最終Target World位置・回転を必ずRootへ記録し、World → HipsはRoot Curveを持ちません。
+
+World → Rootは全範囲を先に検証し、非均一・可変・負Scale／Shearや、未採録のMapped Bone Translation・内部Helper Animationを拒否します。詳細は[Manualの13章](Documentation~/Manual.md)を参照してください。既存API／保存値の`Local=0`・`Global=1`の意味は維持し、新方式は`World=2`です。
 
 ## Nested TimelineのEvaluation Director
 

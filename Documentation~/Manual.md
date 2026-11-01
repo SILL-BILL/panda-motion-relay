@@ -61,7 +61,7 @@ https://github.com/SILL-BILL/panda-motion-relay.git#a8003ec7347d5c55b805af47c623
 
 再現性を保ちたい案件はCommit固定を使い、Branch追従は更新で内容が変わることに注意してください。両URLは同じ機能コードの0.1.0へ解決しました。認証情報なしのHTTPS読取も確認済みです。SSH URL導入は今回検証していないため、導入例として扱いません。
 
-上記は承認済みコードの導入URLです。今回準備中のManualは未commit・未pushのため、そのCommitのPackageにはまだ同梱されていません。タグ付きReleaseもまだ用意していません。現時点の詳細はこのローカルManualと[導入検証記録](../VERIFICATION.md)を参照してください。
+上記は過去の承認済みLocal／Global機能コードの導入確認URLです。Phase 3DのWorld → Root実装と今回のManual追記は未commit・未pushのため、そのCommitには含まれません。タグ付きReleaseもまだ用意していません。World → Rootを使う際は、この実装を含む承認済みの配布版かローカルPackageを用意してください。
 
 Unity公式の[ローカルPackage導入](https://docs.unity3d.com/2022.3/Documentation/Manual/upm-ui-local.html)と[Git依存関係](https://docs.unity3d.com/ja/2021.3/Manual/upm-git.html)も参照できます。
 
@@ -78,7 +78,8 @@ Unity公式の[ローカルPackage導入](https://docs.unity3d.com/2022.3/Docume
 | Relay Director | Motion Relay Trackを所有するTimelineを再生するPlayableDirector |
 | Evaluation Director | Bake中に全体を評価するDirector。必要ならMasterを指定 |
 | Local Bake | 現在の親階層・親の動きを活かすTransform Curveの出力 |
-| Global Bake | 最終World Motionを、固定Reference空間に対するHips Curveへ集約する出力 |
+| World → Root | 評価後Targetの最終World動作を、独立モデルのAnimator Rootと身体のCurveへ記録する出力 |
+| World → Hips（従来のGlobal） | 最終World Motionを、固定Reference空間に対するHips Curveへ集約する出力 |
 | Generic Clip | 骨格内のTransform Pathを直接動かす、Target専用のAnimationClip |
 
 ## 5. 最小構成
@@ -183,11 +184,28 @@ SillBill.PandaMotionRelay.MotionRelayEvaluation.ApplyPendingPoses();
 
 Localは現在のHierarchyとParent Motionを活かすBakeです。Root Motion用Animatorと身体用Animatorを分けた制作構成を維持したい場合に向きます。
 
+### Bake前の必須確認：通常用・Float用の両Driverを常時Activeにする
+
+**Sourceの切替はRelay Clipで行います。通常用・Float用のDriver本体は、使っていない区間も含めて、Bake中ずっと両方Activeにしてください。** Targetも常時Activeを維持します。この準備はLocal／World → Root／World → Hipsのすべてに必要です。
+
+Activation TrackのチェックをONにするだけでは、この条件を満たしません。Trackが有効でも、緑色のActive Clipがない区間ではキャラクターが非Activeになるためです。
+
+検証用のScene／Timelineコピーで、次のように準備すると確実です。
+
+1. 通常用・Float用のDriver本体や親Objectの有効／無効を制御する、**両方のActivation Trackをミュート**します。モーションを再生するAnimation Trackや、Prop等を評価するControl Trackはミュートしません。
+2. Hierarchyで、**両Driver本体とその親ObjectをすべてActive**にします。Animatorを有効にし、Armatureと必要なConstraintも動作する状態を維持します。TargetもActive・Animator有効にします。
+3. Driverを非表示にしたい場合は、**RendererだけをOFF**にします。DriverのRoot ObjectやAnimatorを無効化して隠さないでください。
+4. Scene／Timelineを保存してからPlay Modeに入り、通常区間・Float区間のどちらでも両DriverがActiveのままであることを確認します。
+
+Bake開始時は、選択したRelay Trackの**全ClipのSource**を検証します。現在の区間で使うSourceだけがActiveでも、別区間のSourceが非Activeなら開始できません。`Every Relay Clip requires an active, valid, independent Humanoid source.` が出た場合は、この準備と各ClipのSource指定を確認してください。
+
+### Bakeの実行
+
 1. Previewを確認してSceneを保存し、**Play Mode・Pause解除**にします。
 2. Relay Trackを所有するDirectorのObjectを選び、`Tools > Panda Motion Relay > Bake Humanoid to Generic`を開きます。
-3. `Relay Director`へそのDirectorを指定します。
-4. 単一Timelineなら`Evaluation Director`は空欄にします。Nested構成では14〜15章に従ってMasterを指定します。
-5. `Relay Track`を選択し、`Bake Space`を`Local`にします。
+3. `Relay Director`（転送設定があるTimelineを動かすObject）へ、Relay Trackが入っている側のObjectを指定します。
+4. `Evaluation Director`（全体をまとめて動かすObject）は、単一Timelineなら空欄にします。複数Timelineをまとめて動かす構成では14章の探し方・指定表を使います。
+5. `Relay Track`を選択し、`Bake Mode`を`Local — Use Existing Parent`にします。
 6. `Bake to New Animation Clip`を押し、ProjectのAssets配下に**新規**`.anim`の保存先を指定します。既存Assetの上書きは拒否されます。
 7. Progress終了後、生成Clipを同一骨格のGeneric hierarchyで確認します。Progress表示中の取消が可能です。
 
@@ -206,9 +224,32 @@ Localは現在のHierarchyとParent Motionを活かすBakeです。Root Motion�
 
 Quaternion符号の連続性とCut直前のConstant Tangentを保持します。Key Reduction／Compressionはまだ行わず、各FrameのKeyが残ります。Gapもその時点のTarget実Transformを採録します。
 
-## 13. Global Bake
+## 13. World Bake：Rootへ記録／Hipsへ集約
 
-12章と同じ操作で`Bake Space = Global`を選び、別の新規`.anim`へ保存します。最終World Motionを、採録開始時の固定Referenceに対するHips Position／Quaternion Rotationへ集約します。
+### World — Record Motion to Root（独立モデル用・Rootへ記録）
+
+元の入れ子RootやParentConstraintを持たないモデルで、RootのWorld移動・回転も含めて再現したい場合に使います。12章と同じ操作で`Bake Mode`から`World — Record Motion to Root`を選び、新規`.anim`へ保存します。
+
+採録するのは**Master・Constraint・Relay評価後のTargetの最終World Pose**です。Source Rootを直接記録する別機能ではありません。PreviewでTargetへ動きが転送できていることを先に確認し、SourceのRoot移動も必要な場合はRelay Motion RootをONにします。
+
+| 対象 | World → Root出力 |
+| --- | --- |
+| Animator Root（Animatorが付いているObject） | World位置・回転をIdentity Parent基準のLocal Curveに保存。Position 3＋Quaternion 4 |
+| Hips | 内部Skeletonの親World Poseから再構成したLocal Position 3＋Quaternion 4 |
+| その他のMapped Bone | 親World回転から再構成したLocal Quaternionのみ |
+| Scale／Secondary・Unmapped Bone | 出力なし |
+
+**再生先の親は位置0・回転0・Scale 1とし、元の親AnimationやConstraintを重ねません。** 内部SkeletonのPath・固定Helper・一定Scaleは、採録開始FrameのTargetと同等にします。Scale Curveを出さないため、Character自身の一定Scaleには採録開始FrameのTargetのWorld Scaleを使います。親から外しても見た目の大きさを保った検品用コピーを用意すると確認しやすくなります。上位のRoot用Objectを複製する必要はありません。
+
+「全体を移動するObject」への任意Bindingではなく、Clipを同一骨格CharacterのAnimator Rootへ適用します。Avatarなしの外側Rootだけを対象にするGeneric Root-only Bakeは別の未実装機能です。
+
+この方式だけは、全範囲の最終姿勢を先に評価して検証し、その後もう一度評価してCurveを採録します。検証中も取消可能です。非均一／可変／0以下のScale、Mirror、Shear、Hierarchyの親変更、Hips以外のMapped Bone Translation、内部のUnmapped Helperの移動・回転変化は拒否します。最初のFrameで不変の内部配置・Scaleを確定し、必要な追加Curveを黙って省略したClipは保存しません。Scale／Shearの静的異常は開始時にも検証します。
+
+この検証は揺れものSimulationを記録するためのものではありません。任意のスクリプト・物理状態が時間のSeekで再現しない場合は結果を保証しません。個別モデルの検証結果を確認してください。
+
+### World — Consolidate Motion to Hips（従来のGlobal）
+
+12章と同じ操作で`Bake Mode`から`World — Consolidate Motion to Hips`を選び、別の新規`.anim`へ保存します。最終World Motionを、採録開始時の固定Referenceに対するHips Position／Quaternion Rotationへ集約します。既存APIの`BakeSpace.Global = 1`はこの方式のままです。新方式は`BakeSpace.World = 2`、Localは従来どおり0です。
 
 **GlobalはAnimator Root Curveを出しません。再生先は採録開始時と同等のNeutral／Frozen Reference hierarchyを用意し、元のRoot／Parent Motionを重ねないでください。**
 
@@ -216,14 +257,43 @@ Referenceは、最初のFrameのConstraintとRelayが完了した時点の「Hip
 
 | 目的 | 選択の目安 |
 | --- | --- |
-| 現在のRoot／Character階層と親のAnimationを維持 | Local |
-| Root移動用とCharacter用Animatorを分離運用 | Local |
-| 上位Root／Parentの移動をHipsへ集約 | Global |
-| 固定Reference階層で単体再生するClipへ整理 | Global。参照階層を準備できることが条件 |
+| 現在のRoot／Character階層と親のAnimationを維持 | Local — Use Existing Parent |
+| Root移動用とCharacter用Animatorを分離運用 | Local — Use Existing Parent |
+| 元の入れ子・Constraintなしで、モデルRootのWorld軌道も再現 | World — Record Motion to Root |
+| 上位Root／Parentの移動をHipsへ集約し、モデルRootは固定 | World — Consolidate Motion to Hips（旧Global） |
 
 Globalは任意Hierarchy・任意原点でWorld Poseを一致させる機能ではありません。可変／非一様ScaleやShearを含む全身再現は保証しません。
 
 ## 14. Relay Director / Evaluation Director
+
+### 英語名より「どちらのObjectを入れる欄か」で考える
+
+ここでいうDirectorは、Timelineを動かす`Playable Director`コンポーネントです。Bake Windowには、そのコンポーネントが付いた**Hierarchy内のObject**を指定します。ProjectウィンドウにあるTimeline Assetや、キャラクターのAnimatorを入れる欄ではありません。
+
+| Bake Windowの英語表示 | 日本語での役割 | 指定するもの |
+| --- | --- | --- |
+| Relay Director | **転送設定がある側** | Motion Relay Trackが入っているTimelineを動かすObject |
+| Evaluation Director | **全体をまとめて動かす側** | キャラクターと乗り物・小道具など、必要なTimelineをまとめて動かすObject。Timelineが1つだけなら空欄 |
+| Relay Track | **どの転送設定をBakeするか** | TargetのHumanoid AnimatorをBindingしたMotion Relay Track |
+
+例えば、キャラクター用と乗り物用のTimelineを、1つの親Timelineから動かす場合です。次のObject名は説明用なので、自分のSceneでは名前が違っていても役割で選んでください。
+
+| 説明用のObject名 | 担当する仕事 | Bake Windowでの指定先 |
+| --- | --- | --- |
+| Character | キャラクター用Timelineを動かす。ここにRelay Trackがある | Relay Director |
+| Prop | 乗り物・小道具用Timelineを動かす | このObjectを直接指定する欄はない |
+| Master | CharacterとPropの両Timelineをまとめて動かす | Evaluation Director |
+
+### Hierarchyから指定するObjectを探す手順
+
+1. キャラクター用Timelineを表示しているObjectをHierarchyで選びます。Inspectorの`Playable Director`に入っているTimelineを開き、**Motion Relay Trackがあること**を確認します。このObjectをBake Windowの`Relay Director`へドラッグします。
+2. キャラクターと乗り物・小道具を一緒に動かす親Timelineがある場合は、そのTimelineを動かすObjectをHierarchyで選びます。親TimelineのControl Track／Control Clipから、キャラクター側と乗り物側のDirectorが参照されていることを確認します。このObjectを`Evaluation Director`へドラッグします。
+3. `Relay Track`欄では、TargetのHumanoid AnimatorをBindingしているRelay Trackを選びます。Root移動専用AnimatorをBindingした別のTrackを選ばないでください。
+4. Timelineが1つだけで完結している場合は、2の作業は不要です。`Evaluation Director`を空欄にすると、`Relay Director`と同じObjectが使われます。
+
+**Hierarchyで見た目が親子になっているだけでは、まとめて再生する設定にはなりません。** Evaluation Directorを選ぶ際は、親TimelineのControl Clipで必要な子Directorを動かしていることを確認してください。
+
+### 設定の早見表
 
 | 構成 | Relay Director | Evaluation Director |
 | --- | --- | --- |
@@ -254,7 +324,7 @@ Bake成果物はTarget専用Transform Curveです。同一骨格の確認用コ�
 2. 別のAnimator Controllerに生成ClipをStateとして入れるか、通常のTimeline Animation Trackへ配置してそのAnimatorへBindingします。
 3. その確認用キャラクターをRelayや別の身体Animationから同時駆動しないでください。
 4. LocalではBake時と同等のParent Motionを再現します。既にClipが持つAnimator Root Motionを別途重ねないでください。
-5. Globalでは開始Frameの固定Reference階層を再現し、元の上位Root／Parent Animationを再生しません。
+5. World → RootではIdentity Parentと開始Frameと同等の内部Skeleton／Character一定Scaleを用意します。World → Hips（旧Global）では開始Frameの固定Reference階層を再現します。どちらも元の上位Root／Parent Animationを重ねません。
 6. 頭・手足・Hips・全体位置、Cut前後、最初と最後のFrameを比較します。
 
 FBXのRig設定を変えて参照元全体をGeneric化する必要はありません。検品用コピーで適切な再生設定にしてください。別キャラクターへのHumanoid再Retargetでは一致を保証しません。
@@ -285,9 +355,12 @@ VRC SDKを本パッケージへ依存追加する必要はありません。検�
 | Cutで飛ぶ | 切替前後のDriverのWorld配置・向き。Relative Offset補正はない。境界がFrame整列しているか |
 | Overlap warning | ClipのStart／Durationを確認し、重なりを解消する |
 | Bakeを実行できない | Play Mode・Pause解除、Relay Trackの存在、未使用のAssets配下出力先、Validationメッセージ |
+| `Every Relay Clip requires an active, valid, independent Humanoid source.` が出る | 全ClipのSourceを確認。通常用・Float用の両DriverのActivation Trackをミュートし、本体・親Objectを常時Active、Animatorを有効にする（12章）。SourceにはTarget自身やRoot移動専用Animatorではなく、独立した有効なHumanoid Animatorを指定する |
 | BakeだけConstraint結果がずれる | CharacterのほかにPropを評価する必要がないか。NestedならEvaluation DirectorへMasterを指定 |
 | Local Bake再生がずれる | Generic設定、同一骨格Path、同等のParent Motion、Root Motionの二重適用 |
 | Globalで二重移動する | 元のRoot／Parent Animationを外す。任意原点ではなく開始FrameのFrozen Reference階層で再生 |
+| World → RootでScale／TranslationのErrorが出る | 非均一・可変・負ScaleやShearを除く。Mapped骨のHips以外の移動、内部HelperのAnimationが必要な構成は今回未対応。表示されたTransform名を確認し、Scale／追加Positionを暗黙にBakeする設定だと思わないこと |
+| World → Rootの位置は合うが身体サイズが違う | 再生先の親をIdentityにし、Character自身の一定Scaleを採録開始FrameのTarget World Scaleに合わせる。内部SkeletonのPath・固定Helperも同じ構成を使う |
 | Timeline Missing Script | ProjectをPackage Repository内に置いていないか。Siblingへ分離し、Local参照の解決先を確認する |
 
 Project自体を含む親フォルダーをLocal UPM Packageとして参照する構成は避けてください。Unity 6／Timeline 1.8.13でTimelineAssetの型関連付けを壊すことが確認されています。このレイアウト問題をLibrary削除やTimeline YAMLの繰り返し編集で解決しようとしないでください。
@@ -296,6 +369,7 @@ Project自体を含む親フォルダーをLocal UPM Packageとして参照す�
 
 - Blend、Relative Offset、Custom Source/Target Root、Position Only／Rotation Onlyは未対応。
 - Generic Mapping、Scale Bake、Secondary Bone Bake、Key Reduction、Batch Bake、Custom FPS UIは未対応。
+- Avatarなしの外側Root／任意TransformだけのGeneric Root Bakeは次Phase候補で、今回のWorld → Rootとは別機能。
 - TargetはHumanoidのみ。同一Targetへの複数Relay Track同時Bindingは未対応。
 - Humanoid Mapping外の髪・スカート等のLocal姿勢は転送しませんが、親の身体ボーンには追従します。
 - Motion RootはAnimator.transformを使います。正の均一Scaleを前提とし、非一様／可変ScaleやShearの再現を保証しません。
@@ -305,7 +379,7 @@ Project自体を含む親フォルダーをLocal UPM Packageとして参照す�
 
 ## 20. 検証済み環境
 
-Unity 6000.0.84f1／Timeline 1.8.13とUnity 2022.3.22f1／Timeline 1.7.6で各119 Editor Test成功。実戦データのLocal／Global Bakeも両Unityで数値PASSです。VCC World SDK 3.10.6／ClientSim ONでは、検証済み成果物のLocal／Global再生とGlobal Generic Animator Controller再生がPASSしています。
+Unity 6000.0.84f1／Timeline 1.8.13とUnity 2022.3.22f1／Timeline 1.7.6で、既存119件を含む各142 Editor Test成功。Local／World → Root／World → Hipsの実戦Bakeが両Unityで数値PASSし、新方式のNative Generic Animator Controller再生も375FrameでPASSしています。従来方式のVCC成果物検品実績と新方式の追加結果はVERIFICATIONを参照してください。
 
 新規Projectへの導入試験、Exact Cut／Constraint／状態復元の実測値、再現手順の範囲は[VERIFICATION.md](../VERIFICATION.md)が正本です。ここでの検証は全案件やVRChat Upload／実機の保証ではありません。
 

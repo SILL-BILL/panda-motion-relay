@@ -13,8 +13,9 @@ namespace SillBill.PandaMotionRelay.Editor
 {
     public enum BakeSpace
     {
-        Local,
-        Global
+        Local = 0,
+        Global = 1, // Legacy World -> Hips. Preserve serialized/API meaning.
+        World = 2
     }
 
     public sealed class GenericBakeRequest
@@ -25,6 +26,7 @@ namespace SillBill.PandaMotionRelay.Editor
         public string outputPath;
         public BakeSpace bakeSpace = BakeSpace.Local;
         public Action<float> progress;
+        public Action<float> validationProgress;
         public Func<bool> cancel;
     }
 
@@ -38,14 +40,14 @@ namespace SillBill.PandaMotionRelay.Editor
         {
             if (request == null || request.director == null || request.track == null)
                 throw new ArgumentException("Select a PlayableDirector and a Motion Relay Track.");
-            if (request.bakeSpace != BakeSpace.Local && request.bakeSpace != BakeSpace.Global)
-                throw new ArgumentException("Select Local or Global Bake Space.");
+            if (request.bakeSpace != BakeSpace.Local && request.bakeSpace != BakeSpace.Global && request.bakeSpace != BakeSpace.World)
+                throw new ArgumentException("Select Local, World to Root, or World to Hips Bake Mode.");
             var timeline = request.director.playableAsset as TimelineAsset;
             if (timeline == null || !timeline.GetOutputTracks().Contains(request.track) || request.track.mutedInHierarchy)
                 throw new ArgumentException("The selected track must be an enabled output track of the director's Timeline.");
             var target = request.director.GetGenericBinding(request.track) as Animator;
             if (!HumanoidPoseRelay.IsValid(target) || !target.gameObject.activeInHierarchy || !target.enabled)
-                throw new ArgumentException("The target must be an active Animator with a valid Humanoid Avatar.");
+                throw new ArgumentException("Select a Motion Relay Track bound to an active Animator with a valid Humanoid Avatar. Root-only Animator Tracks are not supported. 身体側のHumanoid TargetへBindingしたTrackを選び、TargetをActiveにしてください。");
             if (!request.director.isActiveAndEnabled)
                 throw new ArgumentException("The director must be active and enabled.");
             if (timeline.GetOutputTracks().OfType<MotionRelayTrack>().Count(t => !t.mutedInHierarchy && request.director.GetGenericBinding(t) == target) != 1)
@@ -65,12 +67,13 @@ namespace SillBill.PandaMotionRelay.Editor
                 var source = asset != null ? asset.source.Resolve(request.director) : null;
                 if (!HumanoidPoseRelay.IsValid(source) || !source.enabled || !source.gameObject.activeInHierarchy ||
                     source == target || source.transform.IsChildOf(target.transform) || target.transform.IsChildOf(source.transform))
-                    throw new ArgumentException("Every Relay Clip requires an active, valid, independent Humanoid source.");
+                    throw new ArgumentException("Every Relay Clip requires an active, valid, independent Humanoid source. Clip: '" + clip.displayName + "', Source: " + (source != null ? source.name : "<unassigned>") + ". 全ClipのDriver本体・親・Animatorを常時有効にしてください。Activation Trackをミュートし、非表示化はRendererだけで行います。");
                 previousEnd = clip.end;
             }
             if ((previousEnd - clips[0].start) * fps > 100000)
                 throw new ArgumentException("Bake range exceeds 100000 frames. Split the Timeline before baking.");
             new BakeEvaluationScope(request, clips[0].start, previousEnd);
+            if (request.bakeSpace == BakeSpace.World) new WorldBakeValidation(target).ValidateStatic();
             var paths = new HashSet<string>();
             foreach (var bone in MappedBones(target))
                 if (bone == target.transform || !bone.IsChildOf(target.transform) || !paths.Add(AnimationUtility.CalculateTransformPath(bone, target.transform)))
@@ -111,7 +114,6 @@ namespace SillBill.PandaMotionRelay.Editor
             if (!Application.isPlaying || EditorApplication.isPaused)
                 throw new InvalidOperationException("Bake requires unpaused Play Mode so native constraints can evaluate.");
             if (busy) throw new InvalidOperationException("Another bake is already running.");
-            busy = true;
             var director = request.director;
             var target = (Animator)director.GetGenericBinding(request.track);
             var timeline = (TimelineAsset)director.playableAsset;
@@ -121,18 +123,34 @@ namespace SillBill.PandaMotionRelay.Editor
             long last = (long)Math.Round(clips[clips.Length - 1].end * fps);
             var channels = new List<BoneCurves>();
             bool global = request.bakeSpace == BakeSpace.Global;
-            if (request.track.relayMotionRoot && !global) channels.Add(new BoneCurves(target.transform, "", true, true));
+            bool world = request.bakeSpace == BakeSpace.World;
+            if (world || request.track.relayMotionRoot && !global) channels.Add(new BoneCurves(target.transform, "", true, true, false, world));
             var hips = target.GetBoneTransform(HumanBodyBones.Hips);
             foreach (var bone in MappedBones(target))
-                channels.Add(new BoneCurves(bone, AnimationUtility.CalculateTransformPath(bone, target.transform), bone == hips, false, global && bone == hips));
+                channels.Add(new BoneCurves(bone, AnimationUtility.CalculateTransformPath(bone, target.transform), bone == hips, false, global && bone == hips, world));
             var scope = new BakeEvaluationScope(request, first / fps, last / fps);
             var directorState = new BakeDirectorState(scope.Directors);
             var scene = new BakeSceneState();
+            var worldValidation = world ? new WorldBakeValidation(target) : null;
             AnimationClip result = null;
             bool saved = false;
             try
             {
+                busy = true;
                 directorState.Prepare();
+                // Validate the complete evaluated range before recording any World curves.
+                // Procedural/constraint results cannot be inferred from clip bindings alone.
+                if (worldValidation != null)
+                    for (long frame = first; frame <= last; frame++)
+                    {
+                        if (request.cancel != null && request.cancel()) throw new OperationCanceledException("Bake canceled.");
+                        scope.Evaluation.time = scope.EvaluationTime(frame / fps);
+                        scope.Evaluation.Evaluate();
+                        yield return null;
+                        MotionRelayEvaluation.ApplyPendingPoses();
+                        worldValidation.Sample();
+                        request.validationProgress?.Invoke((float)(frame - first + 1) / (last - first + 1));
+                    }
                 // Reuse the preview graph: rebuilding can change AnimationTrack scene offsets
                 // and its defaults for channels not explicitly animated by a driver clip.
                 for (long frame = first; frame <= last; frame++)
@@ -145,6 +163,7 @@ namespace SillBill.PandaMotionRelay.Editor
                     // which can stall in batch mode or while the Game view is not visible.
                     yield return null;
                     MotionRelayEvaluation.ApplyPendingPoses();
+                    worldValidation?.Sample();
                     float time = (float)((frame - first) / fps);
                     foreach (var channel in channels) channel.Sample(time);
                     request.progress?.Invoke((float)(frame - first + 1) / (last - first + 1));
@@ -201,6 +220,7 @@ namespace SillBill.PandaMotionRelay.Editor
             private readonly bool position;
             private readonly bool root;
             private readonly bool globalHips;
+            private readonly bool world;
             private Matrix4x4 referenceWorldToLocal;
             private Quaternion referenceWorldRotation;
             private bool hasReference;
@@ -208,10 +228,11 @@ namespace SillBill.PandaMotionRelay.Editor
             private Quaternion previous;
             private bool hasPrevious;
 
-            public BoneCurves(Transform bone, string path, bool position, bool root, bool globalHips = false)
+            public BoneCurves(Transform bone, string path, bool position, bool root, bool globalHips = false, bool world = false)
             {
                 this.bone = bone; this.path = path; this.position = position; this.root = root;
                 this.globalHips = globalHips;
+                this.world = world;
                 keys = new List<Keyframe>[position ? 7 : 4];
                 for (int i = 0; i < keys.Length; i++) keys[i] = new List<Keyframe>();
             }
@@ -226,7 +247,8 @@ namespace SillBill.PandaMotionRelay.Editor
                     referenceWorldRotation = bone.parent != null ? bone.parent.rotation : Quaternion.identity;
                     hasReference = true;
                 }
-                var rotation = globalHips ? Quaternion.Inverse(referenceWorldRotation) * bone.rotation :
+                var rotation = world ? (root || bone.parent == null ? bone.rotation : Quaternion.Inverse(bone.parent.rotation) * bone.rotation) :
+                    globalHips ? Quaternion.Inverse(referenceWorldRotation) * bone.rotation :
                     root && bone.parent != null ? Quaternion.Inverse(bone.parent.rotation) * bone.rotation : bone.localRotation;
                 if (hasPrevious && Quaternion.Dot(previous, rotation) < 0)
                     rotation = new Quaternion(-rotation.x, -rotation.y, -rotation.z, -rotation.w);
@@ -234,7 +256,8 @@ namespace SillBill.PandaMotionRelay.Editor
                 keys[0].Add(new Keyframe(time, rotation.x)); keys[1].Add(new Keyframe(time, rotation.y));
                 keys[2].Add(new Keyframe(time, rotation.z)); keys[3].Add(new Keyframe(time, rotation.w));
                 if (!position) return;
-                var value = globalHips ? referenceWorldToLocal.MultiplyPoint3x4(bone.position) :
+                var value = world ? (root || bone.parent == null ? bone.position : bone.parent.worldToLocalMatrix.MultiplyPoint3x4(bone.position)) :
+                    globalHips ? referenceWorldToLocal.MultiplyPoint3x4(bone.position) :
                     root && bone.parent != null ? bone.parent.InverseTransformPoint(bone.position) : bone.localPosition;
                 keys[4].Add(new Keyframe(time, value.x)); keys[5].Add(new Keyframe(time, value.y)); keys[6].Add(new Keyframe(time, value.z));
             }

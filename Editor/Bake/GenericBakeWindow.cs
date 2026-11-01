@@ -24,21 +24,24 @@ namespace SillBill.PandaMotionRelay.Editor
 
         private void OnGUI()
         {
-            director = (PlayableDirector)EditorGUILayout.ObjectField("Relay Director", director, typeof(PlayableDirector), true);
-            evaluationDirector = (PlayableDirector)EditorGUILayout.ObjectField("Evaluation Director", evaluationDirector, typeof(PlayableDirector), true);
+            director = (PlayableDirector)EditorGUILayout.ObjectField(new GUIContent("Relay Director", "転送設定がある側：Motion Relay Trackを持つTimelineのDirector"), director, typeof(PlayableDirector), true);
+            evaluationDirector = (PlayableDirector)EditorGUILayout.ObjectField(new GUIContent("Evaluation Director", "全体をまとめて動かす側：Character / Propを評価するMaster。単一Timelineなら空欄"), evaluationDirector, typeof(PlayableDirector), true);
             if (evaluationDirector == null)
-                EditorGUILayout.HelpBox("Evaluation Director is optional. When empty, the Relay Director supplies the sampling clock.", MessageType.Info);
-            using (new EditorGUILayout.HorizontalScope())
-            {
-                EditorGUILayout.PrefixLabel("Bake Space");
-                if (GUILayout.Toggle(bakeSpace == BakeSpace.Local, "Local", EditorStyles.radioButton)) bakeSpace = BakeSpace.Local;
-                if (GUILayout.Toggle(bakeSpace == BakeSpace.Global, "Global", EditorStyles.radioButton)) bakeSpace = BakeSpace.Global;
-            }
+                EditorGUILayout.HelpBox("転送設定がある側をRelay Directorへ指定します。単一TimelineならEvaluation Directorは空欄。Character / Propが別Timelineなら全体を動かすMasterを指定します。", MessageType.Info);
+            var modes = new[] { BakeSpace.Local, BakeSpace.World, BakeSpace.Global };
+            var labels = new[] { new GUIContent("Local — Use Existing Parent", "元の親階層・Root Motionを再生時にも使用します。"),
+                new GUIContent("World — Record Motion to Root", "親階層やConstraint評価後のTarget最終World動作を、独立モデルのAnimator Rootへ記録します。"),
+                new GUIContent("World — Consolidate Motion to Hips", "親階層やRoot MotionをHipsへ集約します。従来のGlobalと同じ方式です。") };
+            int selected = Mathf.Max(0, Array.IndexOf(modes, bakeSpace));
+            selected = EditorGUILayout.Popup(new GUIContent("Bake Mode", "再生先の階層と、全体移動の記録先を選びます。"), selected, labels);
+            bakeSpace = modes[selected];
+            EditorGUILayout.HelpBox(labels[selected].tooltip + (bakeSpace == BakeSpace.World ? " 再生先の親は位置0・回転0・Scale 1。Characterの一定Scaleと内部Skeletonを開始Frameに合わせ、元の親やConstraintを重ねません。全範囲を先に検証するため2回評価します。" : ""), MessageType.Info);
             var timeline = director != null ? director.playableAsset as TimelineAsset : null;
             var tracks = timeline != null ? timeline.GetOutputTracks().OfType<MotionRelayTrack>().ToArray() : Array.Empty<MotionRelayTrack>();
             if (tracks.Length == 0) { EditorGUILayout.HelpBox("Select a Director with a Motion Relay Track.", MessageType.Info); return; }
             trackIndex = Mathf.Clamp(trackIndex, 0, tracks.Length - 1);
-            trackIndex = EditorGUILayout.Popup("Relay Track", trackIndex, tracks.Select(t => t.name).ToArray());
+            trackIndex = EditorGUILayout.Popup(new GUIContent("Relay Track", "Humanoid TargetへBindingした身体側Trackを選びます。Root-only Animator Trackは対象外です。"), trackIndex, tracks.Select(t => new GUIContent(t.name)).ToArray());
+            EditorGUILayout.HelpBox("全ClipのDriverは、使用区間外も本体・親・Animatorを有効にします。Activation Trackをミュートし、隠す場合はRendererのみOFFにしてください。", MessageType.Info);
             EditorGUILayout.HelpBox("Raw per-frame Generic bake for this Humanoid target. Mapped bones only; no scale or secondary-bone curves. Uses the Timeline frame rate and the first-to-last Relay Clip range.", MessageType.Info);
             if (!Application.isPlaying || EditorApplication.isPaused)
                 EditorGUILayout.HelpBox("Enter unpaused Play Mode before baking so animation and native constraints can evaluate. The Director and scene transforms are restored after baking.", MessageType.Info);
@@ -69,6 +72,7 @@ namespace SillBill.PandaMotionRelay.Editor
             var runner = host.AddComponent<GenericBakeRunner>();
             request.cancel = () => runner.canceled;
             request.progress = value => runner.canceled |= EditorUtility.DisplayCancelableProgressBar("Panda Motion Relay Bake", "Sampling evaluated target pose", value);
+            request.validationProgress = value => runner.canceled |= EditorUtility.DisplayCancelableProgressBar("Panda Motion Relay Bake", "World → Root: 全範囲のScale / Translationを検証中", value);
             runner.operation = HumanoidGenericBaker.Bake(request, clip => { Selection.activeObject = clip; EditorGUIUtility.PingObject(clip); });
             runner.StartCoroutine(runner.Run());
         }

@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased — Phase 3D
+
+- Add World Preserve Root (`BakeSpace.World = 2`) to record the final evaluated Target world motion for an independent same-skeleton Generic character; preserve Local = 0 and legacy Global = 1 (World to Hips).
+- Validate the entire World range before recording: reject unsupported scale, shear, mapped-bone translation and animated internal helpers without adding scale or secondary curves.
+- Add three explicit Bake Mode labels and Japanese guidance for Director roles, Humanoid-body Track selection and continuously active Drivers; improve target/source errors.
+- Add 23 generated-rig regression cases and verify production baking plus native Generic Animator Controller replay in Unity 6 and Unity 2022.3; retain existing 119 tests.
+
 ## Unreleased — Phase 3C
 
 - Documentation: add a Japanese production-use manual, reorganize the README as a Quick Start, and label version 0.1.0 as Production Preview / Internal Production Use.

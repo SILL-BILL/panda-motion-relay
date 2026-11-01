@@ -1,3 +1,63 @@
+# Phase 3D — World Preserve Root Bake
+
+Verified on 2026-11-01 (Asia/Tokyo), branch `feat/world-preserve-root-bake`, based on `0ad05a345e825bccabb7c6ce95ce1db5bfd45002`. Implementation and documentation remain **uncommitted and unpushed** for maintainer review. No release, version bump, main merge or Runtime change. Package version 0.1.0, Unity 2022.3.22f1 baseline and dependencies are unchanged.
+
+## Design, compatibility and UI
+
+`BakeSpace.Local = 0` and `Global = 1` preserve the original algorithms and serialized meanings. The new `World = 2` records the **final evaluated Target**, after Evaluation Director, native constraints and Relay; it does not copy the Source Root directly. Editor serialization round-trips all three numeric values. The Bake Mode popup displays Local — Use Existing Parent, World — Record Motion to Root, and World — Consolidate Motion to Hips (legacy Global).
+
+World output uses an identity-parent reference: Animator Root world position/quaternion become output Root local curves, Hips uses its evaluated parent world-to-local position and relative quaternion, and other mapped Humanoid bones use relative quaternion only. Root is recorded even when Relay Motion Root is OFF: that flag controls Relay transfer, not whether the final Target Root is exported. Root has 7 curves; Root/Hips have 3 position axes each; all other mapped bones have quaternion only. Scale curves and secondary/unmapped curves are 0. Existing quaternion sign continuity and constant outgoing cut tangents remain; no key reduction is added.
+
+Japanese tooltips/HelpBoxes explain Relay Director, the Master Evaluation Director, the Humanoid body Track rather than a root-only Animator, and keeping every Driver/parent/Animator active throughout the range. Activation Tracks should be muted; hide Renderers only. Errors include failing Clip/Source context where available. Existing uncommitted Manual UX additions were backed up and retained through the same-HEAD branch switch, without stash/reset/restore. The Manual now explains all three modes and replay preparation.
+
+## Validation and supported replay
+
+World performs a full evaluated-range validation pass before recording samples, then rechecks during recording. Positive, finite, constant uniform scales and shear-free world matrices are required on the mapped skeleton paths and Root ancestry. Non-uniform, negative/mirrored, zero/non-finite or animated scales, reparenting, animated non-Hips mapped translations and animated internal helper translation/rotation are rejected without saving an asset. Secondary branches outside mapped-bone ancestry are excluded from validation/recording. Relative scale/shear tolerance is 0.0001; unsupported translation detection uses world displacement above 0.00001 and helper rotation above 0.001 degrees. These are sampled-frame checks, not an analysis of all continuous-time procedural states.
+
+Replay requires the same internal skeleton and first-sample static helper/bone offsets, an identity parent, and the character's **constant world scale** from the first sample. Original moving parents, constraints and root-motion animation must not be applied again. The baked clip is target-specific Generic Transform animation; the native verification uses no Humanoid Avatar and `applyRootMotion = false`. Generic root-only input Animators remain unsupported and are a future phase. Arbitrary animated internal skeletons, scale curves, physics-state capture, custom output reference transforms and subframe scale validation are outside this implementation.
+
+## Automated tests and Console
+
+Unity 6 implementation/full tests/real smoke completed before the Unity 2022 compatibility gate. No original test was removed or its expectation weakened.
+
+| Environment | Full Editor tests | Console / process |
+| --- | --- | --- |
+| Unity 6000.0.84f1 / Timeline 1.8.13 | **142 passed**, 0 failed/skipped (original 119 + new 23) | Exit 0; final separate Console audit errors 0 / warnings 0 |
+| Unity 2022.3.22f1 / Timeline 1.7.6 | **142 passed**, 0 failed/skipped (same cases) | Exit 0; test-completion Console errors 0 / expected headless warning 1 |
+
+The Unity 2022 warning is the known null GfxDevice ambient/reflection-probe notice under `-nographics`. New generated-rig tests cover independent Root/Hips replay, nested translation/rotation and constant scale, Prop ParentConstraint, exact cuts, frame 0, frame 144, fingers, curve scope, state restoration, cancel/exception cleanup, native Animator replay, final Target export with Root transfer OFF, enum serialization and unsafe scale/translation/helper-motion rejection. They do not depend on private assets. An early serialization test used incomplete EditorWindow JSON; it was corrected to serialize a real window through Unity's API. Product serialization was unchanged. Final full-suite results above supersede that intermediate fixture failure.
+
+## Real production bake and native replay
+
+Both ordinary Unity projects used local copies of the production scene/three Timelines, an evaluated reference for frames 0–374, and actual production baker output for Local, Global and World. Relay Motion Root was explicitly enabled on the copied Track; the saved source Track was OFF. The initial helper setup stopped on that precondition, then corrected only the copy. Original scene/Timeline assets were not edited. All Director states were restored after every bake.
+
+Comparison covers the Animator Root and 52 mapped bones, including fingers. Local reuses the matching moving parent. Legacy Global uses a frozen first-sample reference. World uses an independent identity-parent model.
+
+| Environment / mode | Root max position / rotation error | Body max position error | Body max rotation error |
+| --- | --- | --- | --- |
+| Unity 6 / Local, matching parent | 0 / 0° | 0.000000958 | 0° |
+| Unity 6 / Global, legacy Hips | 29 / 9.999892° (fixed Root, expected) | 0.000017221 | 0° |
+| Unity 6 / World → Root | **0 / 0°** | **0.000002136** | **0°** |
+| Unity 2022 / Local, matching parent | 0 / 0° | 0.000000548 | 0° |
+| Unity 2022 / Global, legacy Hips | 29 / 9.999892° (fixed Root, expected) | 0.000017223 | 0° |
+| Unity 2022 / World → Root | **0 / 0°** | **0.000001989** | **0°** |
+
+These are SampleAnimation replay measurements; Global's fixed Root difference documents its unchanged Hips semantics. World and Local Root curve count is 7; Global Root count is 0. World/Local position curves total 6 versus Global 3; every mode has scale 0 and secondary curves 0. Source selection follows `start <= t < end`; incoming Drivers are selected at frames 138 and 240, with no Source at the final frame 374. Frame-0 and frame-144 constrained reference/replay pass. Generated tests also protect neighboring boundary frames, outgoing constant tangents and quaternion continuity.
+
+The mandatory **standard Generic Animator Controller State replay** passed all 375 frames independently of SampleAnimation: maximum position error across Root + all 52 body bones was **0.0000130251** in Unity 6 and **0.0000127949** in Unity 2022; maximum rotation error was **0°** in both (acceptance <0.001 position / <0.1°). No additional new-mode Timeline Animation Track replay was performed; the native Controller requirement is satisfied.
+
+## Optional VCC baked-output inspection
+
+Unity 2022-generated World clip and independent model were copied to the VCC project's LocalOnly area, with SHA-256 provenance recorded. No Relay or Bake was run in VCC. A copied World scene retained the SDK descriptor, used a normal Generic Animator Controller and ClientSim ON, and compared the same 53 transforms for all 375 frames. Result: **PASS**, maximum position error **0.0000127949**, rotation **0°**, Console errors **0**, warnings **2**. Warnings were a missing SceneDescriptor reference camera and the headless Editor `FloatFieldLinkButton` skin style. ClientSim settings before/after were identical; SDK Base/Worlds 3.10.6 and ClientSim were not changed.
+
+Verified locally in a VRChat World SDK environment. Actual VRChat upload/client, Quest/Android, PhysBone simulation continuity and realtime VCC Relay Preview have not been verified by this phase. Prior realtime Preview limitations remain applicable.
+
+Evidence stays outside Git: each ordinary project's `WorkSpace/phase3d/` (full XML, logs and Console evidence) and `WorkSpace/phase3d-real/` (reference, three mode results, native result and PASS status); VCC `WorkSpace/phase3d-world-inspection/` (result, provenance and unchanged settings). No generated scenes, clips, licensed models or logs are package content.
+
+Final repository check: `git diff --check` PASS; staged files 0; tracked LocalOnly/WorkSpace files 0; Runtime and package.json diffs 0. The protected Manual patch's added lines are all retained (the active-Driver requirement is explicitly extended from two modes to all three). Status consists only of the two modified Bake files, the new validator/tests and their Unity metas, and README/Manual/CHANGELOG/VERIFICATION. HEAD remains the starting commit; no commit or push was performed.
+
+---
+
 # Production Preview / UPM Clean Installation Verification
 
 Verified on 2026-11-01 (Asia/Tokyo), preparation branch `chore/production-preview-prep`, based on `a8003ec7347d5c55b805af47c623cfaa49cf6ea3`. Readiness: **READY WITH LIMITATIONS** for Production Preview / Internal Production Use. Documentation is prepared locally and remains uncommitted/unpushed for maintainer review; no new release/tag or main merge.
