@@ -19,7 +19,7 @@ Driver_Float  ─┘
 
 **0.1.0 — Production Preview / Internal Production Use**（実戦投入前プレビュー版・社内／個人制作向け）。Exact Cut、Humanoid姿勢転送、オプションのMotion Root転送、3方式のBake、一意な直接Master/Child構成の評価に対応します。
 
-Unity 6／通常Unity 2022.3で既存119件を含む各142自動テストと実戦BakeがPASS。World → RootはNative Generic Animator Controller再生も検証済みです。すべてのUnity／VRChat環境を保証する段階ではありません。
+Unity 6／通常Unity 2022.3で既存142件を含む各154自動テストと実戦BakeがPASS。非表示Driverの身体入力と、World → RootのNative Generic Animator Controller再生も検証済みです。すべてのUnity／VRChat環境を保証する段階ではありません。
 
 ## インストール
 
@@ -47,6 +47,8 @@ Humanoidモデルとモーションを用意した状態から始めます。初
 8. Scene保存後、Play Mode・Pause解除にして`Tools > Panda Motion Relay > Bake Humanoid to Generic`を開き、Director・身体側Relay Track・`Bake Mode`を指定して新規`.anim`へ保存します。
 
 Exact Cutは`start <= t < end`です。Overlapは無効、Gapは新たな転送なし。詳細操作は[正式マニュアル](Documentation~/Manual.md)を参照してください。
+
+Bake中は使用するDriver Animatorを一時的に`AlwaysAnimate`へ切り替え、終了・取消・例外時に元のCulling Modeへ戻します。RendererがOFFでも身体アニメーションを採録できます。手動でCulling Modeを変更する必要はありません。Driver本体・親・Animatorは引き続き常時Activeにしてください。
 
 ## Bake Modeの選び方
 

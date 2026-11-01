@@ -61,7 +61,7 @@ https://github.com/SILL-BILL/panda-motion-relay.git#a8003ec7347d5c55b805af47c623
 
 再現性を保ちたい案件はCommit固定を使い、Branch追従は更新で内容が変わることに注意してください。両URLは同じ機能コードの0.1.0へ解決しました。認証情報なしのHTTPS読取も確認済みです。SSH URL導入は今回検証していないため、導入例として扱いません。
 
-上記は過去の承認済みLocal／Global機能コードの導入確認URLです。Phase 3DのWorld → Root実装と今回のManual追記は未commit・未pushのため、そのCommitには含まれません。タグ付きReleaseもまだ用意していません。World → Rootを使う際は、この実装を含む承認済みの配布版かローカルPackageを用意してください。
+上記は過去の承認済みLocal／Global機能コードの導入確認URLです。World → Rootは7109a23へCheckpoint済みですが、Driverの身体評価に関する潜在不具合のため、そのCommit単体は実戦投入停止扱いです。Driver評価修正は`feat/world-preserve-root-bake`のCheckpoint対象で、自動テスト・実戦Smoke検証済みです。ユーザー本人による最終GUI操作確認と実案件データでの受け入れは未実施です。修正を含むPackageを用意し、実戦投入前に確認してください。タグ付きReleaseもまだ用意していません。
 
 Unity公式の[ローカルPackage導入](https://docs.unity3d.com/2022.3/Documentation/Manual/upm-ui-local.html)と[Git依存関係](https://docs.unity3d.com/ja/2021.3/Manual/upm-git.html)も参照できます。
 
@@ -198,6 +198,10 @@ Activation TrackのチェックをONにするだけでは、この条件を満�
 4. Scene／Timelineを保存してからPlay Modeに入り、通常区間・Float区間のどちらでも両DriverがActiveのままであることを確認します。
 
 Bake開始時は、選択したRelay Trackの**全ClipのSource**を検証します。現在の区間で使うSourceだけがActiveでも、別区間のSourceが非Activeなら開始できません。`Every Relay Clip requires an active, valid, independent Humanoid source.` が出た場合は、この準備と各ClipのSource指定を確認してください。
+
+**Bake中はPanda Motion Relayが使用するDriver Animatorを一時的にAlwaysAnimateへ切り替え、終了時に元のCulling Modeへ戻します。** Local／World → Root／World → Hipsのすべてが対象で、Worldの事前検証中も有効です。取消・例外時も各Driverの元設定へ戻します。ユーザー側でCulling Modeを手動変更する必要はありません。
+
+これにより、画面外やRenderer OFFでも、身体アニメーションの評価が省略されずにBakeできます。Targetや無関係なAnimatorのCulling Mode、Rendererの表示設定は変更しません。Driver本体・親・Animatorを常時Activeにする条件は引き続き必要です。
 
 ### Bakeの実行
 
@@ -379,7 +383,7 @@ Project自体を含む親フォルダーをLocal UPM Packageとして参照す�
 
 ## 20. 検証済み環境
 
-Unity 6000.0.84f1／Timeline 1.8.13とUnity 2022.3.22f1／Timeline 1.7.6で、既存119件を含む各142 Editor Test成功。Local／World → Root／World → Hipsの実戦Bakeが両Unityで数値PASSし、新方式のNative Generic Animator Controller再生も375FrameでPASSしています。従来方式のVCC成果物検品実績と新方式の追加結果はVERIFICATIONを参照してください。
+Unity 6000.0.84f1／Timeline 1.8.13とUnity 2022.3.22f1／Timeline 1.7.6で、既存142件＋Driver評価の新規12件、各154 Editor Test成功。Renderer OFFのDriverからLocal／World → Root／World → Hipsを実戦Bakeし、同一Driver内の身体入力の時間変化とCulling Mode復元を確認しました。World → RootのNative Generic Animator Controller再生も375FrameでPASSしています。VCC成果物検品と詳細な数値はVERIFICATIONを参照してください。
 
 新規Projectへの導入試験、Exact Cut／Constraint／状態復元の実測値、再現手順の範囲は[VERIFICATION.md](../VERIFICATION.md)が正本です。ここでの検証は全案件やVRChat Upload／実機の保証ではありません。
 

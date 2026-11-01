@@ -1,3 +1,74 @@
+# Driver Evaluation During Bake — Fix Verification
+
+Verified on 2026-11-01 (Asia/Tokyo), branch `feat/world-preserve-root-bake`, based on `7109a23181df64ba046afced38c31b43502296cd`. This fix is included in the Driver Evaluation Fix checkpoint. Automated tests and real-scene smoke verification are complete; **the user's final GUI operation check and acceptance with actual production data remain pending**. No main merge, release/tag, version bump, Runtime change, dependency change or ProjectSettings change. Package version 0.1.0 and minimum Unity 2022.3.22f1 remain unchanged. Production rollout is not authorized by these verification results; the previous 7109a23 checkpoint alone does not contain this fix.
+
+## Cause and implementation
+
+The baker previously did not guarantee evaluation of Source Driver body animation when Animator visibility culling skipped it. Root motion, body-position reconstruction and Source cuts can still move Target bones, so Target variation or agreement with a Target-derived reference alone was an insufficient oracle. Direct observation of the Relay's Source muscle array showed within-driver variation 0 for the Normal Driver and about 0.00000098 for the Float Driver under the skipped-evaluation condition. Changing only Driver evaluation restored variation about 1.68003774 / 0.40001104. The old 0ad05a3 implementation also exhibits this latent weakness under the same condition; the World coordinate calculation is not its exclusive cause. The exact historical action that triggered the user's failed bake remains unrecorded.
+
+New Editor-only `BakeDriverEvaluationState` resolves each Relay Clip Source with `source.Resolve(request.director)`, excludes nulls and stores each unique Animator's original `cullingMode` once. `Prepare()` temporarily sets **only these Drivers** to AlwaysAnimate. It runs before Director preparation and before World's validation pass. The baker restores Directors, then Scene state, then Driver culling in nested finally blocks; the outer finally clears busy and handles incomplete assets. Driver modes remain evaluable during Director restoration. Different initial modes are restored individually.
+
+The fix does not change Target/unrelated Animator culling, render visibility, active/enabled requirements, Source clips, retargeting, World curve math or Runtime Relay. No new Animator Rebind or graph rebuilding is added. Inactive Sources still fail validation rather than being activated. `BakeSceneState` retains its existing responsibilities; Driver culling has a separate scope.
+
+## Automated verification and independent input oracle
+
+| Environment | Full tests | Final test Console / process |
+| --- | --- | --- |
+| Unity 6000.0.84f1 / Timeline 1.8.13 | **154 passed**, 0 failed/skipped | Errors 0, warnings 0; exit 0 |
+| Unity 2022.3.22f1 / Timeline 1.7.6 | **154 passed**, 0 failed/skipped | Errors 0, expected headless GfxDevice warning 1; exit 0 |
+
+The original 142 tests remain unchanged. Twelve new cases add success/cancel/exception coverage in Local, World and legacy Global, plus World preflight cancellation, preflight exception and evaluated-validation failure. The generated Sources have known time-varying Head Nod, Left Arm and Right Upper Leg muscle curves, hidden skinned renderers, active Animators, and mixed original modes (CullUpdateTransforms / CullCompletely). The same Driver is referenced by multiple Clips. Target remains CullUpdateTransforms; an unreferenced Animator remains CullCompletely.
+
+The tests directly assert Source and Target muscle values against the known input curves at sampled frames, within-driver Source variation, Head/Arm/Leg quaternion curve existence and variation, and Head quaternion at frame 0, middle and last owned frame against an independently posed known-muscle rig. They assert Driver/Target/unreferenced modes throughout sampling and World's preflight, renderer invisibility, individual restoration, Director/Scene restoration, busy reset and no incomplete asset on all failure/cancel paths. These tests do not use private models or depend only on a Target-derived reference.
+
+An initial Unity 2022 cold compile used the preceding cached source list before discovering the new helper, briefly reporting CS0246. Asset discovery imported the helper and Unity recompiled successfully in the same invocation; all 154 cases then ran and the final Console was error-free. This was not resolved by changing an API or deleting Library.
+
+## Real user-scene copy, hidden Drivers and three modes
+
+Unity 6 tests and real smoke completed first, followed by Unity 2022 tests and real smoke. The input was a protected copy of the user's 20:01:13 auto-backup preceding the 20:02 failed clip, with complete model/Prefab/Timeline dependencies. Original Scene/Timeline/failed Clip were not edited. Verification operates in each external project's LocalOnly. A first verification-helper setup assumed a single Relay Track; the backup has Root and body Tracks. That setup stopped before baking. The helper was corrected to select the Humanoid-bound body Track, and a separate Run2 copy preserves the first attempt's evidence.
+
+For every production bake, both Driver renderers were OFF and their starting Animator modes were CullUpdateTransforms. During sampling (and World preflight) both became AlwaysAnimate; Target culling and renderer invisibility stayed unchanged. Each mode restored original Driver modes, Target mode and Director state. A full-body reference was captured separately with Driver evaluation enabled, and actual Source input was also measured during each bake.
+
+| Environment | Within-Normal muscle variation | Within-Float muscle variation | Local / World / Global |
+| --- | ---: | ---: | --- |
+| Unity 6 | 1.68003774 | 0.40001103 | PASS for all three |
+| Unity 2022 | 1.68003678 | 0.40001068 | PASS for all three |
+
+All modes contain time-varying body curves. Representative quaternion variation in Unity 6: Hips about 34.99°, Head 18.88°, LeftHand 54.53°, RightHand 67.25°, LeftFoot 42.86°, RightFoot 49.84°. Unity 2022 agrees within floating-point differences. This is a full Source-body-animation check rather than only Root movement or the difference between two Drivers.
+
+| Environment / mode | Root position / rotation error | Body max position error | Body max rotation error |
+| --- | --- | ---: | ---: |
+| Unity 6 / Local, matching parent | 0 / 0° | 0.000001068 | 0° |
+| Unity 6 / World → Root, identity parent | **0 / 0°** | **0.000001970** | **0°** |
+| Unity 6 / legacy Global, fixed Root | 29 / 9.999892° (expected) | 0.000017221 | 0° |
+| Unity 2022 / Local, matching parent | 0 / 0° | 0.000001072 | 0° |
+| Unity 2022 / World → Root, identity parent | **0 / 0°** | **0.000001972** | **0°** |
+| Unity 2022 / legacy Global, fixed Root | 29 / 9.999892° (expected) | 0.000017221 | 0° |
+
+These SampleAnimation comparisons cover 375 frames and the Animator Root plus 52 mapped bones. World Native Generic Animator Controller replay also passes all 375 frames: maximum position error **0.000016042** in Unity 6 and **0.000015858** in Unity 2022, rotation 0° in both. Legacy Global's fixed Root differences are its unchanged Hips-consolidation semantics. Local uses its matching original parent environment. Position/rotation curve scope remains Root 7 + Hips 7 + other mapped quaternion for World/Local-root-on; Global has no Root curves. Scale/secondary curves remain 0.
+
+Ownership is checked at every sample: Normal before 138, Float on [138,240), Normal on [240,374), none at 374. Frame 0, neighbors 137/138/139 and 239/240/241, constrained frame 144 and final frame 374 all remain consistent with the evaluated reference. Existing generated tests retain quaternion continuity and exact-cut constant tangent checks.
+
+Real-scene Console: errors 0, warnings 7 in both Editors. The seven warnings are from the pre-existing, unsupported Generic root-only Relay Track in the copied production setup ("use two independent Humanoid Animators"); the selected Humanoid body Track bakes successfully. This fix does not implement Generic root-only Relay/Bake or suppress its existing warning.
+
+## VCC baked-output inspection
+
+Unity 2022-generated World clip and independent model were copied with SHA-256 provenance into the VCC project's LocalOnly, including private dependency copies needed for asset resolution. **No Bake or realtime Relay was executed in VCC.** SDK Base/Worlds 3.10.6 and ClientSim ON were retained; ClientSim settings before/after are identical. Native Generic Animator Controller playback compared all 53 transforms over 375 frames: **PASS**, max position error **0.000015858**, rotation **0°**, isHuman false, final Console errors **0**, warnings **1** (copied SceneDescriptor reference camera unset).
+
+An initial graphical inspection had shader include errors and unusable images, despite in-tolerance pose metrics. HLSLSupport.cginc was present on disk. A subsequent normal-Editor run launched from the Editor directory passed without shader errors, with no SDK/ProjectSettings/package code change. The failed first evidence is retained and is not presented as a passing visual test. The final run renders Frame 0, 60 and 144; inspection of the final Frame 0 standing pose and Frame 60 running pose confirms visible arm/leg motion and a correctly rendered model.
+
+Verified locally in a VRChat World SDK / ClientSim environment. Upload/client, Quest/Android, PhysBone simulation continuity and realtime VCC Relay Preview remain outside this verification.
+
+## Documentation, evidence and repository safety
+
+README/Manual explain that Bake temporarily enables AlwaysAnimate on used Drivers and restores it, including cancellation/exceptions; users do not need to change culling manually. Always-active Driver/parent/Animator and Renderer-only hiding instructions are retained. CHANGELOG records the culling fix and 12 cases. No version bump.
+
+Evidence: external ordinary projects' `WorkSpace/driver-evaluation-fix/` (154-test XML and Console) and `WorkSpace/driver-evaluation-real/` (Source variation, restoration, body curve variation, replay metrics); VCC `WorkSpace/driver-evaluation-world-inspection/` (first attempt/provenance) and `WorkSpace/driver-evaluation-world-inspection-rerun/` (final PASS, unchanged settings, rendered frames). All generated scenes/clips/models/logs/images remain outside tracked content.
+
+Checkpoint review checks cover diff whitespace, unchanged Runtime/package.json, explicitly staged fix/test/documentation files only and no tracked LocalOnly/WorkSpace. Final human GUI and production-data acceptance remain pending; main merge, tags, releases and production rollout are outside this checkpoint. The Phase 3D section below is historical; its Target-reference agreement alone did not establish independent time-varying Source input, which is now explicitly covered above.
+
+---
+
 # Phase 3D — World Preserve Root Bake
 
 Verified on 2026-11-01 (Asia/Tokyo), branch `feat/world-preserve-root-bake`, based on `0ad05a345e825bccabb7c6ce95ce1db5bfd45002`. Implementation and documentation remain **uncommitted and unpushed** for maintainer review. No release, version bump, main merge or Runtime change. Package version 0.1.0, Unity 2022.3.22f1 baseline and dependencies are unchanged.

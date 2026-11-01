@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased — Driver evaluation fix
+
+- Fixed bake source animation being skipped by Animator visibility culling.
+- Temporarily set only the selected Relay Track's unique Source Driver Animators to AlwaysAnimate, including World preflight, and restore each original mode after success, cancellation or exceptions.
+- Preserve Target/unrelated Animator culling, renderer visibility, active states, graph setup and existing Local/World/legacy Global curve calculations.
+- Add 12 generated-rig cases covering independent known Head/Arm/Leg animation, hidden Drivers, all three modes and restoration; verify all 154 tests and real-scene Source inputs in Unity 6 and Unity 2022.3.
+
 ## Unreleased — Phase 3D
 
 - Add World Preserve Root (`BakeSpace.World = 2`) to record the final evaluated Target world motion for an independent same-skeleton Generic character; preserve Local = 0 and legacy Global = 1 (World to Hips).

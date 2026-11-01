@@ -131,12 +131,14 @@ namespace SillBill.PandaMotionRelay.Editor
             var scope = new BakeEvaluationScope(request, first / fps, last / fps);
             var directorState = new BakeDirectorState(scope.Directors);
             var scene = new BakeSceneState();
+            var driverEvaluationState = new BakeDriverEvaluationState(clips.Select(c => ((MotionRelayClip)c.asset).source.Resolve(director)));
             var worldValidation = world ? new WorldBakeValidation(target) : null;
             AnimationClip result = null;
             bool saved = false;
             try
             {
                 busy = true;
+                driverEvaluationState.Prepare();
                 directorState.Prepare();
                 // Validate the complete evaluated range before recording any World curves.
                 // Procedural/constraint results cannot be inferred from clip bindings alone.
@@ -198,7 +200,11 @@ namespace SillBill.PandaMotionRelay.Editor
                 try
                 {
                     try { directorState.Restore(); }
-                    finally { scene.Restore(); }
+                    finally
+                    {
+                        try { scene.Restore(); }
+                        finally { driverEvaluationState.Restore(); }
+                    }
                 }
                 finally
                 {
