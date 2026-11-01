@@ -137,6 +137,16 @@ Bake自体は元TargetのAvatarを変更しません。別キャラクターへ�
 Clip外や無効な設定ではTargetを変更しません。通常のTimeline Previewの終了時は、登録したボーンの姿勢をUnityが復元します。
 スクリプトからの`Evaluate()`単独利用やPlay Mode停止時にRelay自身が初期姿勢へ戻すことはありません。
 
+## 推奨VRChat制作フロー
+
+1. Unity 6または通常Unity 2022.3.22f1でMotion Relay Previewを確認します。
+2. Local／Global Bakeを行い、完成AnimationClipを生成します。
+3. 同一骨格のGeneric hierarchyで、Clipの再生結果を数値検証します。Localは同等のParent Motion、Globalは固定Reference hierarchyで再生します。
+4. 検証済みBake ClipをVCC Projectへ持ち込みます。
+5. ClientSim ONでBake済みClipの位置・姿勢・Root Motionを検品します。
+
+VCCは納品予定のBake済み成果物を検品する環境として使用します。VCC／ClientSim上のリアルタイムRelay Preview・Bakeは標準ワークフローの保証範囲外です。VCCで直接Relay Previewした際、Frame 138にRoot位置差0.001580238（回転差0°）を観測しています。ClientSim OFFでも再現しており、ON固有とは確認できていません。この差は未修正の既知制限ですが、上記の成果物検品フローではNon-blockingとして扱います。
+
 ## 検証
 
 Editor Testは第三者モデルを使わず、テスト内でHumanoid Avatarを生成します。
@@ -146,7 +156,7 @@ Phase 2Bでは、Motion Root ON/OFF、別Parent、Scale保持、身体位置の�
 Phase 3では、採録時Previewと同一HierarchyのGeneric再生結果を全Frameで比較し、Root・Hips・頭・手足・指・Secondary BoneのWorld／Local Poseを確認します。
 実行結果と現在の制限は[VERIFICATION.md](VERIFICATION.md)を参照してください。
 
-VCC公式VPM CLIで作成した外部World SDK環境（Unity 2022.3.22f1 / SDK 3.10.5）で、PandaとSDKのコンパイル共存をローカル確認しました。実際のVRChatアップロードとクライアントでの確認は行っていません。
+VCCで作成した外部World SDK環境（Unity 2022.3.22f1 / SDK Base + Worlds 3.10.6 / ClientSim ON）で、通常Unity 2022.3で検証済みのLocal／Global Bake Clipの再生をローカル確認しました。Globalは通常のGeneric Animator Controllerでも確認済みです。実測値と既知制限は[VERIFICATION.md](VERIFICATION.md)を参照してください。実際のVRChatアップロードとクライアント実機での確認は行っていません。
 
 ## 開発ポリシー
 

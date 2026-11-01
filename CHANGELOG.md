@@ -2,6 +2,8 @@
 
 ## Unreleased — Phase 3C
 
+- Verification / documentation: record production-like Local/Global bake results in standard Unity 2022.3 and baked-output inspection in VRC SDK 3.10.6 / ClientSim ON, including Global Generic Animator Controller playback.
+- Documentation: recommend baking in standard Unity and inspecting baked clips in VCC; record the unresolved, non-blocking VCC Relay Preview frame-138 root discrepancy.
 - Separate optional Evaluation Director from Relay Director for direct Master/Child Timeline baking; omitted evaluation preserves the single-Director API.
 - Resolve the unique Control Clip and map Relay time using start, clipIn and timeScale; reject ambiguous, out-of-range, looping, prefab-instantiated and multi-level control configurations.
 - Evaluate Character and Prop timelines through the Master while keeping binding and exposed-reference resolution on the Relay Director.

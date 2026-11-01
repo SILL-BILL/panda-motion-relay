@@ -1,6 +1,6 @@
 # Phase 3C Evaluation Director verification
 
-Verified on 2026-10-31 (Asia/Tokyo). Implementation on `feat/bake-evaluation-director`, based on `e598a7953e3c6f49d5bb6f9e7f41818bcf435d7a`. Changes remain uncommitted and unpushed pending maintainer approval.
+Verified on 2026-10-31 (Asia/Tokyo). Implementation on `feat/bake-evaluation-director`, based on `e598a7953e3c6f49d5bb6f9e7f41818bcf435d7a`, subsequently checkpointed as `1f6d4ad7794bf62cb3c57240f61694eb42e889f4`. The original verification below describes the implementation before that checkpoint; later cross-version and VCC results follow in the next section.
 
 ## Design and changed files
 
@@ -68,6 +68,61 @@ This phase supports one unambiguous direct Master-to-Relay Control Clip. It reje
 No runtime/package dependency, minimum Unity version or VRChat dependency change. This phase does not claim VRChat upload/client verification or real PhysBone simulation. The real-data smoke was performed in Unity 6; the Unity 2022 gate uses generated automated tests.
 
 Final repository check: only the five modified source/document files and six new source/meta files listed above; index empty, no LocalOnly/WorkSpace/private assets staged, `git diff --check` passed, HEAD unchanged at the baseline. Unity 6 is left outside Play Mode with the copied validation scene and Bake Window open, Relay set to Character and Evaluation set to Master.
+
+---
+
+# Cross-version real-world bake and VCC baked-output verification
+
+Verified on 2026-11-01 (Asia/Tokyo), using Phase 3C checkpoint `1f6d4ad7794bf62cb3c57240f61694eb42e889f4`. This follow-up changes documentation only. Runtime, Editor, Tests, package metadata and dependencies are unchanged; the existing 119/119 passing automated results in each Unity version are reused without rerunning the suite for documentation.
+
+## Standard VRChat workflow
+
+Perform production Preview, Local/Global Bake and numerical Generic replay verification in Unity 6 or standard Unity 2022.3.22f1. Bring the verified AnimationClips into the VCC-created project and inspect the baked outputs with ClientSim ON. VCC is the baked-deliverable inspection environment; direct VCC Relay Preview/Bake is outside the standard workflow guarantee.
+
+## Production-like bake results
+
+The normal Unity 2022.3.22f1 project used the same production-like UnityPackage as the cross-version smoke, preserving imported originals and working on LocalOnly copies. Master-scoped Character/Prop evaluation, exact cuts, frame-144 ParentConstraint synchronization and all three Director states restored: PASS. The table includes the earlier Unity 6 results for comparison. Errors are maximum world-position differences in Unity units; all listed sampling/replay rotation differences are 0 degrees.
+
+| Environment | Mode | Sampling position error | Clip replay position error | Result |
+| --- | --- | --- | --- | --- |
+| Unity 6000.0.84f1 | Local | 0 | 0.000000999156 | PASS |
+| Unity 6000.0.84f1 | Global | 0 | 0.00000953731 | PASS |
+| Standard Unity 2022.3.22f1 | Local | 0 | 0.000000547960 | PASS |
+| Standard Unity 2022.3.22f1 | Global | 0.000000562309 | 0.00000962149 | PASS |
+
+The standard Unity 2022 smoke ended with Console errors 0 / warnings 0; the batch Editor log also contains the expected headless rendering notice. Both modes retain scale/secondary exclusion, with Local Animator-root curves 7 and Global root curves 0.
+
+## VCC final baked-output inspection: PASS
+
+Environment: Unity 2022.3.22f1, VRC SDK Base + Worlds 3.10.6, ClientSim ON. Only the Local/Global `.anim` and `.meta` files marked PASS by the normal Unity 2022 cross-version smoke were copied into `Assets/LocalOnly/MotionRelayFinalInspection/Baked/`. Source and copied files remained hash-identical. No rebake or curve editing was performed in VCC.
+
+The inspection scene retained VRCWorld and VRC Scene Descriptor. Copied authoring Timelines contained no Relay tracks. Local replay used the matching animated parent hierarchy; Global used a frozen first-reference hierarchy without adding original ancestor motion. Generic characters did not undergo a Humanoid retarget pass.
+
+Compared 375 frames at 24 fps (0–374) against the normal Unity 2022 PASS references, measuring Hips, Head, both Hands, both Feet and LeftIndexDistal world pose. Both clips were replayed programmatically with `AnimationClip.SampleAnimation`; Global additionally passed standard Generic Animator Controller playback, with `Animator.isHuman == false` and no `SampleAnimation` in that additional check.
+
+| VCC replay check | Max world position difference | Max rotation difference | Result |
+| --- | --- | --- | --- |
+| Local, matching animated parent | 0.000000547960 | 0 degrees | PASS |
+| Global, frozen reference parent | 0.00000962149 | 0 degrees | PASS |
+| Global, native Generic Animator Controller | 0.00001519077 | 0 degrees | PASS |
+
+| Curve binding scope (read-only inspection) | Local | Global |
+| --- | --- | --- |
+| Animator-root curves | 7 | 0 |
+| Scale curves | 0 | 0 |
+| Secondary / unmapped curves | 0 | 0 |
+
+Rendered checkpoints 0, 137, 138, 144, 239, 240 and 350 cover normal, entry, Float movement, exit and return poses. Representative images showed no large body-pose break; numerical comparisons cover world trajectory and double-motion errors. ClientSim initialized and maintained Play Mode, with no SDK compile conflict or major playback error. Each clip's Console recorded errors 0 and warning 1: the VRC Scene Descriptor Reference Camera was unset. This is a VRChat scene setup warning, not a Panda Motion Relay warning. Native playback logs also included duplicate AudioListener notices from the inspection scene; scene listeners were disabled afterward so ClientSim supplies its own. That audio-only cleanup did not alter the tested animation data.
+
+ClientSim remained ON and its complete settings matched before/after. Read-only hash monitoring found no new changes to original Test assets, ProjectSettings, SDK/package files (including the previously monitored WorldQualitySettings sample asset), source baked clips or imported clips. No manual repair or rollback was performed. Inspection scenes, copied Timelines, controller, camera helpers, reports and images remain outside the repository in the VCC project's LocalOnly/WorkSpace directories.
+
+## Known VCC Relay Preview discrepancy and limits
+
+Direct Relay Preview in VCC observed a frame-138 Driver-root versus Target-root position difference of 0.001580238 units, rotation difference 0 degrees. It also reproduced with ClientSim OFF, so it is not established as ClientSim-ON-specific. The cause is unresolved and no fix is claimed. It is a known, non-blocking limitation for the standard workflow above, which uses verified baked outputs for VCC inspection. It remains relevant if direct VCC Relay Preview/Bake is required in the future.
+
+The baked-output PASS does not claim that direct VCC Relay Preview/Bake passed. It also does not claim VRChat upload, client/hardware verification, Quest build/upload or full PhysBone simulation. Secondary-motion verification here means only that baked clips contain no secondary/unmapped curves.
+
+Local evidence: standard Unity 2022 project's `WorkSpace/cross-version-smoke/` and VCC project's `WorkSpace/final-baked-inspection/` (provenance/hashes, numerical results, curve counts, controller result, Console captures, settings equality, monitored hashes and rendered images). The earlier direct-Relay attempts are retained separately in `WorkSpace/vcc-smoke-restart/`, `vcc-bake-off-verify-on/` and `vcc-sdk3106-smoke/`. These artifacts are not repository content.
 
 ---
 
