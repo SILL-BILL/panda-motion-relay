@@ -260,7 +260,7 @@ namespace SillBill.PandaMotionRelay.Tests
                     Assert.That(AnimationUtility.GetCurveBindings(result).Any(b => b.path == "" || b.propertyName.Contains("Scale")), Is.False);
                     var replay = Own(UnityEngine.Object.Instantiate(n.Relay.Target.gameObject));
                     var animator = replay.GetComponent<Animator>(); animator.avatar = null; animator.Rebind(); animator.enabled = false;
-                    replay.transform.SetPositionAndRotation(spaces[0].rootPosition, spaces[0].rootRotation);
+                    replay.transform.SetPositionAndRotation(Vector3.zero, Quaternion.identity);
                     replay.transform.localScale = spaces[0].rootScale;
                     var hipsPath = AnimationUtility.CalculateTransformPath(n.Relay.Target.GetBoneTransform(HumanBodyBones.Hips), n.Relay.Target.transform);
                     for (int f = 0; f < spaces.Count; f++)

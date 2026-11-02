@@ -19,11 +19,19 @@ Driver_Float  ─┘
 
 **0.1.0 — Production Preview / Internal Production Use**（実戦投入前プレビュー版・社内／個人制作向け）。Exact Cut、Humanoid姿勢転送、オプションのMotion Root転送、3方式のBake、一意な直接Master/Child構成の評価に対応します。
 
-Unity 6／通常Unity 2022.3で既存142件を含む各154自動テストと実戦BakeがPASS。非表示Driverの身体入力と、World → RootのNative Generic Animator Controller再生も検証済みです。すべてのUnity／VRChat環境を保証する段階ではありません。
+Unity 6／通常Unity 2022.3で各183自動テストと、実戦Sceneコピーの4条件（Local Root OFF／ON、World → Root、World → Hips）のGeneric Timeline再生がPASS。非表示Driverの身体Motionも確認しています。すべてのUnity／VRChat環境を保証する段階ではありません。
 
 ## インストール
 
 RepositoryをUnity Projectの外へ取得し、Package Managerの`+ > Add package from disk...`から、このRepositoryの`package.json`を選びます。Resolve・コンパイル完了後、`Tools > Panda Motion Relay > Bake Humanoid to Generic`を確認してください。
+
+実案件ではPackage Managerの`Add package from git URL...`へ次のタグ固定URLを指定します。
+
+```text
+https://github.com/SILL-BILL/panda-motion-relay.git#v0.1.0
+```
+
+Branch追従URLは使わず、`Packages/packages-lock.json`の解決Commitを確認してください。初回はScene／Timelineのコピーと新規Bake出力フォルダーで検証します。v0.1.0タグは移動せず、修正は新Version／新Tagで配布します。
 
 ```text
 workspace/
@@ -43,7 +51,7 @@ Humanoidモデルとモーションを用意した状態から始めます。初
 4. `Motion Relay Track`を追加し、TargetのHumanoid AnimatorへBindingします。
 5. `Motion Relay Clip`を3本追加し、各Clipの`Source`へNormal／Float／NormalのDriver Animatorを指定します。例：24fpsで`[0,24) [24,48) [48,72)`。
 6. TimelineをScrub／Playして、Frame 23→24、47→48で転送元が正確に切り替わることを確認します。
-7. Rootも転送する場合だけTrackの`Relay Motion Root`をONにします。Driverメッシュを隠す場合はRendererだけをOFFにします。
+7. 新規Trackの`Relay Motion Root`はONです。Targetの配置を保持したい場合はOFFにします。既存Trackの保存済み設定は変更されません。Driverメッシュを隠す場合はRendererだけをOFFにします。
 8. Scene保存後、Play Mode・Pause解除にして`Tools > Panda Motion Relay > Bake Humanoid to Generic`を開き、Director・身体側Relay Track・`Bake Mode`を指定して新規`.anim`へ保存します。
 
 Exact Cutは`start <= t < end`です。Overlapは無効、Gapは新たな転送なし。詳細操作は[正式マニュアル](Documentation~/Manual.md)を参照してください。
@@ -55,12 +63,14 @@ Bake中は使用するDriver Animatorを一時的に`AlwaysAnimate`へ切り替�
 | 目的 | 選択 | 再生条件 |
 | --- | --- | --- |
 | 元の親階層を再利用 | Local — Use Existing Parent（既定） | 同一骨格・同等のParent Motion |
-| 親なし独立モデルでRootのWorld動作も再現 | World — Record Motion to Root | Identity Parent、開始Frameと同等の内部SkeletonとCharacter一定Scale |
-| 独立モデルで全体移動をHipsへ集約 | World — Consolidate Motion to Hips（旧Global） | 開始Frameの固定Reference階層。元Root／Parent Motionを重ねない |
+| 親なし独立モデルでRootのWorld動作も再現 | World — Record Motion to Root | Identity Parent、開始Frameと同等の内部SkeletonとCharacter一定World Scale。TimelineのRemove Start OffsetはOFF |
+| 独立モデルで全体移動をHipsへ集約 | World — Consolidate Motion to Hips | Rootの位置0・回転Identityで固定。同一内部SkeletonとCharacter一定World Scale。元Root／Parent Motionを重ねない |
 
 成果物はHumanoid muscle Clipではなく、同一内部HierarchyのTarget専用Generic Transform Clipです。Humanoid再Retargetでの一致は保証しません。全方式でScale／Secondary Curveは出しません。LocalはRelay Motion Root ON時にRoot Curveを持ち、World → Rootは最終Target World位置・回転を必ずRootへ記録し、World → HipsはRoot Curveを持ちません。
 
-World → Rootは全範囲を先に検証し、非均一・可変・負Scale／Shearや、未採録のMapped Bone Translation・内部Helper Animationを拒否します。詳細は[Manualの13章](Documentation~/Manual.md)を参照してください。既存API／保存値の`Local=0`・`Global=1`の意味は維持し、新方式は`World=2`です。
+**Important: World → Root ClipをTimelineで再生する場合は、Animation ClipのRemove Start OffsetをOFFにしてください。** ONではBakeしたRootの開始位置・回転が除去され、元のWorld配置を再現できません。World → HipsはRoot Curveがないため、この項目が表示されない場合があります。
+
+両World方式は全範囲を先に検証し、非均一・可変・負Scale／Shearや、未採録のMapped Bone Translation・内部Helper Animationを拒否します。詳細は[Manualの13章](Documentation~/Manual.md)を参照してください。保存値は`Local=0`・`Global=1`・`World=2`を維持します。0.1.0のGlobalはIdentity Root向けのHips集約です。過去Checkpointの開始時World親空間への出力とは異なります。
 
 ## Nested TimelineのEvaluation Director
 
@@ -88,7 +98,7 @@ Blend、Relative Offset、Custom Root、Position Only／Rotation Only、Generic 
 
 ## Verification
 
-[VERIFICATION.md](VERIFICATION.md)が試験結果・実測値・検証範囲の正本です。VCC SDK Base + Worlds 3.10.6／ClientSim ONでLocal／Global成果物とGlobal Generic Animator Controller再生を検証済みです。VRChat Upload／Client実機・Quest Build／Upload・PhysBone完全Simulationは未検証です。
+[VERIFICATION.md](VERIFICATION.md)が試験結果・実測値・検証範囲の正本です。今回のVCC SDK Base + Worlds 3.10.5環境では、2022.3生成のWorld → Root／World → HipsをNative Generic Timelineで検品しました。VCCでBake・リアルタイムRelayは実行していません。VRChat Upload／Client実機・Quest Build／Upload・PhysBone完全Simulationは未検証です。
 
 開発環境は[Development~/README.md](Development~/README.md)、開発方針は[AGENTS.md](AGENTS.md)を参照してください。開発Project・個人Asset・LocalOnly／WorkSpaceはPackageへ含めません。
 

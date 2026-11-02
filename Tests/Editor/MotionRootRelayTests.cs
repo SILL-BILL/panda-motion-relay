@@ -11,7 +11,7 @@ namespace SillBill.PandaMotionRelay.Tests
     public sealed partial class HumanoidRelayTests
     {
         [Test]
-        public void MotionRootDisabledByDefaultPreservesTargetRoot()
+        public void MotionRootExplicitlyDisabledPreservesTargetRoot()
         {
             var setup = RootTimeline(false);
             var position = setup.Target.transform.position;
@@ -241,10 +241,10 @@ namespace SillBill.PandaMotionRelay.Tests
         }
 
         [Test]
-        public void MotionRootTrackOptionRoundTripsAndDefaultsOff()
+        public void MotionRootTrackOptionRoundTripsAndDefaultsOn()
         {
             var track = Own(ScriptableObject.CreateInstance<MotionRelayTrack>());
-            Assert.That(track.relayMotionRoot, Is.False);
+            Assert.That(track.relayMotionRoot, Is.True);
             track.relayMotionRoot = true;
             var json = EditorJsonUtility.ToJson(track);
             var restored = Own(ScriptableObject.CreateInstance<MotionRelayTrack>());

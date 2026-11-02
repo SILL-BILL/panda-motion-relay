@@ -89,7 +89,7 @@ namespace SillBill.PandaMotionRelay.Tests
             yield return new ExitPlayMode();
         }
         [UnityTest]
-        public IEnumerator GlobalBake_UsesFrozenReferenceParent()
+        public IEnumerator GlobalBake_UsesIndependentIdentityReferenceParent()
         {
             yield return new EnterPlayMode();
             yield return CheckSpace(BakeSpace.Global, SpaceCheck.Reference);
@@ -103,7 +103,7 @@ namespace SillBill.PandaMotionRelay.Tests
             yield return new ExitPlayMode();
         }
         [UnityTest]
-        public IEnumerator GlobalBake_ReplayWithFrozenParentMatchesOriginalHipsWorldPose()
+        public IEnumerator GlobalBake_ReplayWithIdentityRootMatchesOriginalHipsWorldPose()
         {
             yield return new EnterPlayMode();
             yield return CheckSpace(BakeSpace.Global, SpaceCheck.Replay);
@@ -169,7 +169,7 @@ namespace SillBill.PandaMotionRelay.Tests
         private enum SpaceCheck
         {
             Local, Root, Hips, OtherBones, Translation, Rotation, Reference, CompareLocal,
-            Replay, RootReplay, Cut, Constraint, Scale, Secondary, Restore, Gap, Cancel
+            Replay, RootReplay, Cut, Constraint, Scale, Secondary, Restore, Gap, Cancel, TimelineLocal, TimelineRoot
         }
 
         private sealed class SpaceFrame
@@ -201,7 +201,7 @@ namespace SillBill.PandaMotionRelay.Tests
 
         private IEnumerator CheckSpace(BakeSpace space, SpaceCheck check)
         {
-            bool root = check == SpaceCheck.Root || check == SpaceCheck.RootReplay || check == SpaceCheck.Cut;
+            bool root = check == SpaceCheck.Root || check == SpaceCheck.RootReplay || check == SpaceCheck.Cut || check == SpaceCheck.TimelineRoot;
             var setup = RootTimeline(root);
             setup.Target.gameObject.SetActive(false);
             setup.Target = Rig("SpaceTarget", 1.3f, true, true);
@@ -263,9 +263,12 @@ namespace SillBill.PandaMotionRelay.Tests
             var request = BakeRequest(setup);
             request.bakeSpace = space;
             var frames = new List<SpaceFrame>();
+            var timelineFrames = new List<WorldFrame>();
             request.progress = _ =>
             {
                 frames.Add(new SpaceFrame(setup.Target));
+                if (check == SpaceCheck.TimelineLocal || check == SpaceCheck.TimelineRoot)
+                    timelineFrames.Add(new WorldFrame(setup.Target.GetComponentsInChildren<Transform>(true)));
                 if (check == SpaceCheck.Constraint)
                     AssertWorld(carrier, animatedParent.position, animatedParent.rotation);
                 if (check == SpaceCheck.Restore) { renderer.enabled = true; inactive.SetActive(false); }
@@ -324,6 +327,14 @@ namespace SillBill.PandaMotionRelay.Tests
                 Assert.That(renderer.enabled, Is.False);
                 Assert.That(inactive.activeSelf && setup.Target.gameObject.activeSelf, Is.True);
                 Assert.That(HumanoidGenericBaker.IsBaking, Is.False);
+                // Replay intentionally seeks the original parent Timeline. Check the baker's
+                // restoration above, before this separate authoring/playback operation.
+                if (check == SpaceCheck.TimelineLocal || check == SpaceCheck.TimelineRoot)
+                {
+                    var replay = Own(Object.Instantiate(setup.Target.gameObject, setup.Target.transform.parent, false));
+                    yield return AssertTimelineReplay(replay.GetComponent<Animator>(), bakedResult, timelineFrames, false,
+                        f => { setup.Director.time = f / (double)bakedResult.frameRate; setup.Director.Evaluate(); });
+                }
             }
             finally { TearDown(); CleanBakeAssets(); }
         }
@@ -364,7 +375,8 @@ namespace SillBill.PandaMotionRelay.Tests
             var replay = Object.Instantiate(setup.Target.gameObject);
             var animator = replay.GetComponent<Animator>();
             animator.avatar = null; animator.Rebind(); animator.enabled = false;
-            replay.transform.SetPositionAndRotation(reference.rootPosition, reference.rootRotation);
+            replay.transform.SetPositionAndRotation(space == BakeSpace.Global ? Vector3.zero : reference.rootPosition,
+                space == BakeSpace.Global ? Quaternion.identity : reference.rootRotation);
             replay.transform.localScale = reference.rootScale;
             var replayHips = replay.transform.Find(hipsPath);
             float localVsGlobalDistance = 0, localVsGlobalAngle = 0, localHipsTravel = 0;
@@ -390,8 +402,8 @@ namespace SillBill.PandaMotionRelay.Tests
                     else
                     {
                         clip.SampleAnimation(replay, time);
-                        Assert.That(Vector3.Distance(replayHips.position, sample.worldPosition), Is.LessThan(.001f), "Frozen hierarchy replay position frame " + i);
-                        Assert.That(Quaternion.Angle(replayHips.rotation, sample.worldRotation), Is.LessThan(.1f), "Frozen hierarchy replay rotation frame " + i);
+                        Assert.That(Vector3.Distance(replayHips.position, sample.worldPosition), Is.LessThan(.001f), "Identity hierarchy replay position frame " + i);
+                        Assert.That(Quaternion.Angle(replayHips.rotation, sample.worldRotation), Is.LessThan(.1f), "Identity hierarchy replay rotation frame " + i);
                         localVsGlobalDistance = Mathf.Max(localVsGlobalDistance, Vector3.Distance(position, sample.localPosition));
                         localVsGlobalAngle = Mathf.Max(localVsGlobalAngle, Quaternion.Angle(rotation, sample.localRotation));
                     }

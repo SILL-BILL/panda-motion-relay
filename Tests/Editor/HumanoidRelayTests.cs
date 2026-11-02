@@ -221,6 +221,7 @@ namespace SillBill.PandaMotionRelay.Tests
             Own(animationClip.asset);
             animationClip.duration = 2;
             if (!relayFirst) relayTrack = Own(timeline.CreateTrack<MotionRelayTrack>(null, "Relay"));
+            relayTrack.relayMotionRoot = false;
             var clip = relayTrack.CreateClip<MotionRelayClip>();
             clip.duration = 2;
             var relayAsset = Own((MotionRelayClip)clip.asset);

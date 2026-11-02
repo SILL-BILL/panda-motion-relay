@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.1.0 — Production Preview (2026-11-02)
+
+- Includes multi-source exact cuts, Humanoid relay, optional motion-root transfer, nested Evaluation Director and target-specific Local / World → Root / World → Hips Generic baking.
+- Correct World → Hips (Global = 1) to use the fixed Hips-parent space of an independent identity-root output hierarchy, retaining constant effective character scale and internal helpers. The previous checkpoint's original-world-parent reference is superseded.
+- Apply full-range World validation to both World modes; reject unsupported scale, shear, mapped translation and animated internal helpers before saving.
+- Enable Relay Motion Root by default for new tracks; preserve explicitly serialized false and true values.
+- Document the required Remove Start Offset OFF setting for World → Root Timeline playback, identity-root Hips replay and the three output modes.
+- Add identity-hierarchy, Timeline playback and saved-track compatibility regression coverage while retaining prior behavior checks under the updated specification.
+- Verify 183 tests in each of Unity 6000.0.84f1 and Unity 2022.3.22f1, four-condition production-copy Timeline acceptance, and World baked-output Timeline inspection in a local VCC SDK environment. VRChat upload/client, Quest and PhysBone simulation remain unverified.
+
 ## Unreleased — Driver evaluation fix
 
 - Fixed bake source animation being skipped by Animator visibility culling.

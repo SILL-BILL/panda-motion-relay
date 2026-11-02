@@ -35,7 +35,7 @@ namespace SillBill.PandaMotionRelay.Editor
             int selected = Mathf.Max(0, Array.IndexOf(modes, bakeSpace));
             selected = EditorGUILayout.Popup(new GUIContent("Bake Mode", "再生先の階層と、全体移動の記録先を選びます。"), selected, labels);
             bakeSpace = modes[selected];
-            EditorGUILayout.HelpBox(labels[selected].tooltip + (bakeSpace == BakeSpace.World ? " 再生先の親は位置0・回転0・Scale 1。Characterの一定Scaleと内部Skeletonを開始Frameに合わせ、元の親やConstraintを重ねません。全範囲を先に検証するため2回評価します。" : ""), MessageType.Info);
+            EditorGUILayout.HelpBox(labels[selected].tooltip + (bakeSpace != BakeSpace.Local ? " 再生先のRoot配置は位置0・回転0。Characterの一定World Scaleと内部Skeletonを開始Frameに合わせ、元の親やConstraintを重ねません。全範囲を先に検証するため2回評価します。" : "") + (bakeSpace == BakeSpace.World ? " Timeline再生ではRemove Start OffsetをOFFにします。" : ""), MessageType.Info);
             var timeline = director != null ? director.playableAsset as TimelineAsset : null;
             var tracks = timeline != null ? timeline.GetOutputTracks().OfType<MotionRelayTrack>().ToArray() : Array.Empty<MotionRelayTrack>();
             if (tracks.Length == 0) { EditorGUILayout.HelpBox("Select a Director with a Motion Relay Track.", MessageType.Info); return; }

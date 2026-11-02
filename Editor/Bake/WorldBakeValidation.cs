@@ -34,7 +34,7 @@ namespace SillBill.PandaMotionRelay.Editor
         {
             foreach (var t in scales)
             {
-                if (t == null) throw new ArgumentException("World to Root: the hierarchy changed during validation.");
+                if (t == null) throw new ArgumentException("World bake: the hierarchy changed during validation.");
                 var s = t.localScale;
                 if (!Finite(s) || s.x <= 0 || s.y <= 0 || s.z <= 0 || !Uniform(s))
                     throw Unsupported(t, "non-uniform, negative/mirrored, zero or non-finite scale");
@@ -78,7 +78,7 @@ namespace SillBill.PandaMotionRelay.Editor
             Mathf.Abs(v.x - v.z) <= ScaleTolerance * Mathf.Max(0.00001f, v.x, v.y, v.z);
         private static bool ChangedScale(Vector3 a, Vector3 b) => Vector3.Distance(a, b) > ScaleTolerance * Mathf.Max(0.00001f, b.magnitude);
         private static ArgumentException Unsupported(Transform t, string reason) =>
-            new ArgumentException("World to Root cannot bake " + reason + " at '" + t.name + "'. Use constant positive uniform scale and a fixed internal skeleton; no asset was saved.");
+            new ArgumentException("World bake cannot bake " + reason + " at '" + t.name + "'. Use constant positive uniform scale and a fixed internal skeleton; no asset was saved.");
 
         private sealed class State
         {

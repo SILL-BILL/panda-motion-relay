@@ -10,8 +10,8 @@ namespace SillBill.PandaMotionRelay
     [TrackBindingType(typeof(Animator))]
     public sealed class MotionRelayTrack : TrackAsset
     {
-        [Tooltip("Copy the selected Source Animator root's final world position and rotation. Target scale is preserved. Disabled by default.")]
-        public bool relayMotionRoot;
+        [Tooltip("Copy the selected Source Animator root's final world position and rotation. Target scale is preserved. Enabled by default for new tracks.")]
+        public bool relayMotionRoot = true;
 
         public override Playable CreateTrackMixer(PlayableGraph graph, GameObject go, int inputCount)
         {

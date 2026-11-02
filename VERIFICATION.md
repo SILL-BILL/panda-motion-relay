@@ -1,4 +1,73 @@
-# Driver Evaluation During Bake — Fix Verification
+# Production Preview 0.1.0 — Release Gate Verification
+
+Verified on 2026-11-02 (Asia/Tokyo), branch `fix/world-hips-preview-release`, starting at `c2f93962783909f9a13844919e3fcf55c355e9f6`. Package version remains **0.1.0**, minimum Unity **2022.3.22f1**, Timeline dependency **1.7.6**. No VRChat SDK dependency is added. The sections below the historical divider describe earlier checkpoints and their earlier Global semantics; they are not the current replay specification.
+
+## User-reported GUI results and correction
+
+The release request records the user's GUI acceptance of Local with Relay Motion Root OFF and ON. World → Root contained the final world keys and replayed as intended after setting **Remove Start Offset OFF**. World → Hips failed the user's independent-model test and was treated as a release blocker. The corrected Hips behavior is verified here by automated Timeline playback on a protected copy of the user's subsequently saved scene; this does not claim a second human GUI check of the corrected Hips mode.
+
+Global retains serialized value **1** but now constructs its fixed Hips-parent reference from an independent output hierarchy: root position zero, identity rotation, constant effective character world scale and the same internal skeleton/helper transforms. It no longer freezes the original target's initial world-parent placement. Final evaluated target Hips world position is transformed by this output parent's inverse matrix; final world rotation is transformed by the inverse output-parent rotation. Other mapped bones retain local quaternion curves. The shared full-range validation rejects unsupported scale, shear, mapped non-Hips translation and animated helpers before saving either World mode.
+
+Only **new** MotionRelayTrack instances default Relay Motion Root to ON. Saved false and true values both survive asset save/unload/reload. Local calculations, exact-cut tangents, quaternion continuity, curve scope and the used-driver-only AlwaysAnimate protection remain covered.
+
+## Automated gates
+
+| Environment | Full suite | Result |
+| --- | ---: | --- |
+| Unity 6000.0.84f1 / Timeline 1.8.13 | **183 / 183** | PASS, process exit 0 |
+| Unity 2022.3.22f1 / Timeline 1.7.6 | **183 / 183** | PASS, process exit 0 |
+
+The 154 existing cases remain represented. Body-only fixtures explicitly select Motion Root OFF, the previous default-setting assertion follows the new specification, and former frozen-parent Global replay checks now use the required identity output root. No curve, restoration, culling, scope or cut assertions were removed. Twenty-nine additional cases cover saved track settings, independent Hips output, scale/helper rejection and real Timeline replay in all three modes (Local OFF and ON).
+
+The generated Hips fixture checks frames **0, 60, 137, 138, 144, 239, 240, 300, 374** directly against the known neutral-output scale/helper geometry as well as final world pose. Separate known-muscle driver tests assert Source/Target inputs and body quaternion output against independently posed rigs, including hidden Drivers and all bake modes. Cut tests check stepped pre-boundary intervals. Native Generic Animator and PlayableDirector / TimelineAsset / AnimationTrack / AnimationPlayableAsset replay are both exercised; World → Root uses Remove Start Offset OFF.
+
+An initial development run passed 181 cases and failed the two new Local Timeline cases because the test itself sought the parent Timeline before asserting the earlier bake-restored clock. Restoration assertions were moved before the separate replay operation, without removing them. The final full suite above passes all 183 cases in both Editors.
+
+## Saved production-scene copy and actual Timeline playback
+
+The user saved the scene and requested a copy. All 54 scene/dependency assets and metadata were hashed before copying. Copies use isolated GUIDs under each external development project's `Assets/LocalOnly/PreviewReleaseInput`; the original scene, Timeline assets, user-generated clips and metadata have **zero hash changes**. Unsupported root-only Relay tracks are muted only in the verification copy; both Source characters/parents/Animators remain active, Driver renderers are OFF and their starting culling is CullUpdateTransforms.
+
+The newly saved production range is **frame 0 through 373 inclusive (374 samples)**. An initial helper assumed the older instruction's 0..374 range and stopped before baking. The helper was corrected to use the actual clip range; neither the original nor copied authored clip range was extended. Frame 374 remains included in the generated regression fixture above.
+
+Each mode is captured independently, baked, then replayed using an actual Generic AnimationTrack with Remove Start Offset OFF. Local shares the original animated parent hierarchy; World outputs use an independent identity hierarchy and constant effective character scale. The comparison covers the root where appropriate and **52 mapped body bones**, over every sampled frame.
+
+| Environment / mode | Root curves | Hips curves | Max Timeline world position error | Max rotation error |
+| --- | ---: | ---: | ---: | ---: |
+| Unity 6 / Local OFF | 0 | 7 | 0.000005252 | 0° |
+| Unity 6 / Local ON | 7 | 7 | 0.000005252 | 0° |
+| Unity 6 / World → Root | 7 | 7 | 0.000004991 | 0° |
+| Unity 6 / World → Hips | **0** | **7** | **0.000005473** | **0°** |
+| Unity 2022 / Local OFF | 0 | 7 | 0.000005060 | 0° |
+| Unity 2022 / Local ON | 7 | 7 | 0.000005060 | 0° |
+| Unity 2022 / World → Root | 7 | 7 | 0.000005083 | 0° |
+| Unity 2022 / World → Hips | **0** | **7** | **0.000005306** | **0°** |
+
+All are below position **0.001** and rotation **0.1°**. Every output has **zero scale and unmapped/secondary curves**. Hips output's root remains identity throughout replay. Used Driver modes are AlwaysAnimate during baking and restored afterward; Target/unrelated Animator culling and hidden renderers remain unchanged. Both ordinary-Unity production runs finish with Console errors **0**, warnings **0**, compiling **false**, exit **0**.
+
+Within-driver measured muscle variation is about **2.077287 / 0.543990** in both Editors. Root-relative body motion is independently confirmed by Head, both Hands and both Feet local rotation changes, approximately **18.88°–67.25°** in every mode; matching only whole-character movement would not pass this check.
+
+## VCC baked-output gate
+
+World → Root and World → Hips clips, neutral Generic models and dependencies generated in ordinary Unity 2022.3 were copied to the existing VCC project's LocalOnly. SHA-256 matches prove copied clip/model/reference provenance. SDK Base + Worlds version is **3.10.5** on this machine.
+
+| VCC native Generic Timeline output | Samples | Max position error | Max rotation error |
+| --- | ---: | ---: | ---: |
+| World → Root | 374 | 0.000005083 | 0° |
+| World → Hips | 374 | 0.000005306 | 0° |
+
+PASS; final diagnostic Console errors **0**, compiling **false**, exit **0**. The empty inspection scene produces one SDK warning: **Unable to find scene descriptor in scene - Playing without ClientSim**. A headless Editor skin warning is also logged during shutdown, after the diagnostic snapshot. No scene descriptor or ClientSim simulation was added. **No Bake or realtime Relay runs in VCC**, no ClientSim setting is changed, and VCC ProjectSettings hashes are unchanged. Existing ordinary-Unity ProjectSettings also remain unchanged.
+
+Verified locally in a VRChat World SDK environment. **Actual VRChat upload and client-side verification have not been performed.** Quest/Android and PhysBone runtime simulation are outside this gate.
+
+## Release evidence and safety
+
+Generated models, scenes, clips, JSON, XML, logs and helper scripts remain local-only, outside the package repository. Local evidence includes `preview-unity6-final.xml`, `preview-unity2022-final.xml`, `production-unity6-run2.json`, `production-unity2022.json`, `production-vcc.json`, `production-body-variation.json`, source hashes and VCC copy-provenance checks. Automated package tests generate their own redistributable rigs and do not require private inputs.
+
+The source gate precedes staging, fast-forward integration and tagging. Tag-install verification must then resolve `#v0.1.0` to the release commit in clean Unity 6 and Unity 2022.3 projects before a GitHub **Pre-release** is published; its post-tag results are recorded in the release notes and completion report rather than asserted in advance in this immutable tagged source. Production projects are not automatically modified.
+
+---
+
+# Historical: Driver Evaluation During Bake — Fix Verification
 
 Verified on 2026-11-01 (Asia/Tokyo), branch `feat/world-preserve-root-bake`, based on `7109a23181df64ba046afced38c31b43502296cd`. This fix is included in the Driver Evaluation Fix checkpoint. Automated tests and real-scene smoke verification are complete; **the user's final GUI operation check and acceptance with actual production data remain pending**. No main merge, release/tag, version bump, Runtime change, dependency change or ProjectSettings change. Package version 0.1.0 and minimum Unity 2022.3.22f1 remain unchanged. Production rollout is not authorized by these verification results; the previous 7109a23 checkpoint alone does not contain this fix.
 

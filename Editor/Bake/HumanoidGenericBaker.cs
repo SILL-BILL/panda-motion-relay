@@ -14,7 +14,7 @@ namespace SillBill.PandaMotionRelay.Editor
     public enum BakeSpace
     {
         Local = 0,
-        Global = 1, // Legacy World -> Hips. Preserve serialized/API meaning.
+        Global = 1, // World -> Hips. Preserve the serialized value.
         World = 2
     }
 
@@ -73,7 +73,7 @@ namespace SillBill.PandaMotionRelay.Editor
             if ((previousEnd - clips[0].start) * fps > 100000)
                 throw new ArgumentException("Bake range exceeds 100000 frames. Split the Timeline before baking.");
             new BakeEvaluationScope(request, clips[0].start, previousEnd);
-            if (request.bakeSpace == BakeSpace.World) new WorldBakeValidation(target).ValidateStatic();
+            if (request.bakeSpace != BakeSpace.Local) new WorldBakeValidation(target).ValidateStatic();
             var paths = new HashSet<string>();
             foreach (var bone in MappedBones(target))
                 if (bone == target.transform || !bone.IsChildOf(target.transform) || !paths.Add(AnimationUtility.CalculateTransformPath(bone, target.transform)))
@@ -127,12 +127,12 @@ namespace SillBill.PandaMotionRelay.Editor
             if (world || request.track.relayMotionRoot && !global) channels.Add(new BoneCurves(target.transform, "", true, true, false, world));
             var hips = target.GetBoneTransform(HumanBodyBones.Hips);
             foreach (var bone in MappedBones(target))
-                channels.Add(new BoneCurves(bone, AnimationUtility.CalculateTransformPath(bone, target.transform), bone == hips, false, global && bone == hips, world));
+                channels.Add(new BoneCurves(bone, AnimationUtility.CalculateTransformPath(bone, target.transform), bone == hips, false, global && bone == hips, world, target.transform));
             var scope = new BakeEvaluationScope(request, first / fps, last / fps);
             var directorState = new BakeDirectorState(scope.Directors);
             var scene = new BakeSceneState();
             var driverEvaluationState = new BakeDriverEvaluationState(clips.Select(c => ((MotionRelayClip)c.asset).source.Resolve(director)));
-            var worldValidation = world ? new WorldBakeValidation(target) : null;
+            var worldValidation = world || global ? new WorldBakeValidation(target) : null;
             AnimationClip result = null;
             bool saved = false;
             try
@@ -227,6 +227,7 @@ namespace SillBill.PandaMotionRelay.Editor
             private readonly bool root;
             private readonly bool globalHips;
             private readonly bool world;
+            private readonly Transform animatorRoot;
             private Matrix4x4 referenceWorldToLocal;
             private Quaternion referenceWorldRotation;
             private bool hasReference;
@@ -234,11 +235,12 @@ namespace SillBill.PandaMotionRelay.Editor
             private Quaternion previous;
             private bool hasPrevious;
 
-            public BoneCurves(Transform bone, string path, bool position, bool root, bool globalHips = false, bool world = false)
+            public BoneCurves(Transform bone, string path, bool position, bool root, bool globalHips = false, bool world = false, Transform animatorRoot = null)
             {
                 this.bone = bone; this.path = path; this.position = position; this.root = root;
                 this.globalHips = globalHips;
                 this.world = world;
+                this.animatorRoot = animatorRoot;
                 keys = new List<Keyframe>[position ? 7 : 4];
                 for (int i = 0; i < keys.Length; i++) keys[i] = new List<Keyframe>();
             }
@@ -247,10 +249,14 @@ namespace SillBill.PandaMotionRelay.Editor
             {
                 if (globalHips && !hasReference)
                 {
-                    // Sample is called only after the first frame's constraints and relay apply.
-                    // Keep values, not a live Transform, so subsequent ancestor motion is retained.
-                    referenceWorldToLocal = bone.parent != null ? bone.parent.worldToLocalMatrix : Matrix4x4.identity;
-                    referenceWorldRotation = bone.parent != null ? bone.parent.rotation : Quaternion.identity;
+                    // Build the independent output hierarchy, not the original world parent:
+                    // identity root position/rotation, constant effective character scale,
+                    // and the first evaluated internal helper transforms. Validation ensures
+                    // that these helpers and scales remain fixed throughout the bake.
+                    var internalParent = animatorRoot.worldToLocalMatrix * bone.parent.localToWorldMatrix;
+                    var outputParent = Matrix4x4.Scale(animatorRoot.lossyScale) * internalParent;
+                    referenceWorldToLocal = outputParent.inverse;
+                    referenceWorldRotation = Quaternion.Inverse(animatorRoot.rotation) * bone.parent.rotation;
                     hasReference = true;
                 }
                 var rotation = world ? (root || bone.parent == null ? bone.rotation : Quaternion.Inverse(bone.parent.rotation) * bone.rotation) :

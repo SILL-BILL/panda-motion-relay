@@ -87,7 +87,7 @@ namespace SillBill.PandaMotionRelay.Tests
             public WorldFrame(Transform[] transforms) { positions = transforms.Select(t => t.position).ToArray(); rotations = transforms.Select(t => t.rotation).ToArray(); rootScale = transforms[0].lossyScale; }
         }
 
-        private IEnumerator CheckWorld(string check)
+        private IEnumerator CheckWorld(string check, BakeSpace mode = BakeSpace.World)
         {
             var n = NestedBakeTimeline();
             n.Relay.Target.gameObject.SetActive(false);
@@ -111,7 +111,7 @@ namespace SillBill.PandaMotionRelay.Tests
             n.Relay.A.transform.SetParent(parent, false); n.Relay.B.transform.SetParent(parent, false); n.Anchor.SetParent(parent, false);
             n.Relay.Target.transform.SetParent(parent, false); n.Relay.Target.transform.localScale = Vector3.one * .8f;
             var hair = new GameObject("SecondaryHair").transform; hair.SetParent(n.Relay.Target.GetBoneTransform(HumanBodyBones.Head), false); hair.localPosition = new Vector3(.1f, .2f, .3f);
-            var request = BakeRequest(n.Relay); request.evaluationDirector = n.Master; request.bakeSpace = BakeSpace.World;
+            var request = BakeRequest(n.Relay); request.evaluationDirector = n.Master; request.bakeSpace = mode;
             bool reject = check == "animated-scale" || check.EndsWith("position") || check == "helper-rotation";
             if (reject && check != "animated-scale")
             {
@@ -139,7 +139,9 @@ namespace SillBill.PandaMotionRelay.Tests
                         var neutral = Own(new GameObject("IndependentIdentityParent")).transform;
                         replay = Own(Object.Instantiate(n.Relay.Target.gameObject, neutral));
                         var animator = replay.GetComponent<Animator>(); animator.avatar = null; animator.runtimeAnimatorController = null; animator.enabled = false;
-                        replay.transform.SetPositionAndRotation(transforms[0].position, transforms[0].rotation); replay.transform.localScale = frames[0].rootScale;
+                        replay.transform.SetPositionAndRotation(mode == BakeSpace.Global ? Vector3.zero : transforms[0].position,
+                            mode == BakeSpace.Global ? Quaternion.identity : transforms[0].rotation);
+                        replay.transform.localScale = frames[0].rootScale;
                     }
                     if (f == 144 && check == "144") AssertWorld(n.Relay.Target.transform, n.Relay.B.transform.position, n.Relay.B.transform.rotation);
                 }
@@ -163,33 +165,47 @@ namespace SillBill.PandaMotionRelay.Tests
                 AssertSnapshot(n.Relay.Target, before); Assert.That(HumanoidGenericBaker.IsBaking, Is.False);
                 if (reject || check == "cancel" || check == "exception") { Assert.That(failure, reject ? Is.TypeOf<ArgumentException>() : check == "cancel" ? Is.TypeOf<OperationCanceledException>() : Is.TypeOf<InvalidOperationException>()); Assert.That(output, Is.Null); Assert.That(AssetDatabase.LoadMainAssetAtPath(request.outputPath), Is.Null); if (reject) Assert.That(samples, Is.Zero, "Reject before recording"); yield break; }
                 Assert.That(failure, Is.Null, failure?.ToString()); Assert.That(samples, Is.EqualTo(375)); Assert.That(validationSamples, Is.EqualTo(375));
-                var bindings = AnimationUtility.GetCurveBindings(output); Assert.That(bindings.Count(b => b.path == ""), Is.EqualTo(7));
+                var bindings = AnimationUtility.GetCurveBindings(output); Assert.That(bindings.Count(b => b.path == ""), Is.EqualTo(mode == BakeSpace.Global ? 0 : 7));
                 var hipsPath = AnimationUtility.CalculateTransformPath(n.Relay.Target.GetBoneTransform(HumanBodyBones.Hips), n.Relay.Target.transform);
-                Assert.That(bindings.Count(b => b.path == hipsPath), Is.EqualTo(7)); Assert.That(bindings.Count(b => b.propertyName.Contains("Position")), Is.EqualTo(6));
+                Assert.That(bindings.Count(b => b.path == hipsPath), Is.EqualTo(7)); Assert.That(bindings.Count(b => b.propertyName.Contains("Position")), Is.EqualTo(mode == BakeSpace.Global ? 3 : 6));
                 Assert.That(bindings.Any(b => b.propertyName.Contains("Scale") || b.path.Contains("SecondaryHair") || b.propertyName.Contains("Euler")), Is.False);
                 var replayTransforms = paths.Select(p => p == "" ? replay.transform : replay.transform.Find(p)).ToArray();
-                for (int f = 0; f <= 374; f++) { output.SampleAnimation(replay, f / 24f); AssertWorldFrames(replayTransforms, frames[f]); }
+                for (int f = 0; f <= 374; f++) { output.SampleAnimation(replay, f / 24f); AssertWorldFrames(replayTransforms, frames[f], mode == BakeSpace.Global); }
+                if (mode == BakeSpace.Global)
+                    foreach (int f in new[] { 0, 60, 137, 138, 144, 239, 240, 300, 374 })
+                    {
+                        int hipsIndex = Array.FindIndex(transforms, t => t == n.Relay.Target.GetBoneTransform(HumanBodyBones.Hips));
+                        // Independent fixture constants: 1.2 parent scale * .8 character scale,
+                        // and the known Armature offset from Rig(), under an identity root.
+                        var expectedPosition = frames[f].positions[hipsIndex] / .96f - new Vector3(.13f, .17f, -.11f);
+                        Assert.That(Vector3.Distance(SpacePosition(output, hipsPath, f / 24f), expectedPosition), Is.LessThan(.001f), "Hips key in neutral output space frame " + f);
+                        Assert.That(Quaternion.Angle(SpaceRotation(output, hipsPath, f / 24f), frames[f].rotations[hipsIndex]), Is.LessThan(.1f));
+                    }
                 if (check == "cut")
                     foreach (int boundary in new[] { 138, 240 })
                     {
                         foreach (var binding in bindings) Assert.That(AnimationUtility.GetKeyRightTangentMode(AnimationUtility.GetEditorCurve(output, binding), boundary - 1), Is.EqualTo(AnimationUtility.TangentMode.Constant));
-                        output.SampleAnimation(replay, (boundary - .5f) / 24f); AssertWorldFrames(replayTransforms, frames[boundary - 1]);
+                        output.SampleAnimation(replay, (boundary - .5f) / 24f); AssertWorldFrames(replayTransforms, frames[boundary - 1], mode == BakeSpace.Global);
                     }
                 if (check == "native")
                 {
                     var controller = AnimatorController.CreateAnimatorControllerAtPath(bakeFolder + "/Replay.controller"); var state = controller.layers[0].stateMachine.AddState("Baked"); state.motion = output; controller.layers[0].stateMachine.defaultState = state;
                     var animator = replay.GetComponent<Animator>(); animator.runtimeAnimatorController = controller; animator.enabled = true; animator.applyRootMotion = false; animator.cullingMode = AnimatorCullingMode.AlwaysAnimate; animator.speed = 0; animator.Rebind();
                     Assert.That(animator.isHuman, Is.False);
-                    for (int f = 0; f <= 374; f++) { animator.Play("Baked", 0, (f / 24f) / output.length); animator.Update(0); yield return null; AssertWorldFrames(replayTransforms, frames[f]); }
+                    for (int f = 0; f <= 374; f++) { animator.Play("Baked", 0, (f / 24f) / output.length); animator.Update(0); yield return null; AssertWorldFrames(replayTransforms, frames[f], mode == BakeSpace.Global); }
                 }
+                if (check == "timeline")
+                    yield return AssertTimelineReplay(replay.GetComponent<Animator>(), output, frames, mode == BakeSpace.Global);
             }
             finally { TearDown(); CleanBakeAssets(); }
         }
 
-        private static void AssertWorldFrames(Transform[] transforms, WorldFrame frame)
+        private static void AssertWorldFrames(Transform[] transforms, WorldFrame frame, bool hipsOutput = false)
         {
+            var hips = hipsOutput ? transforms.First(t => t.name == "Hips") : null;
             for (int i = 0; i < transforms.Length; i++)
             {
+                if (hipsOutput && transforms[i] != hips && hips.IsChildOf(transforms[i])) continue;
                 Assert.That(Vector3.Distance(transforms[i].position, frame.positions[i]), Is.LessThan(.001f), transforms[i].name + " World position");
                 Assert.That(Quaternion.Angle(transforms[i].rotation, frame.rotations[i]), Is.LessThan(.1f), transforms[i].name + " World rotation");
             }

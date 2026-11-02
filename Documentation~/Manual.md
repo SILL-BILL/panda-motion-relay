@@ -45,23 +45,15 @@ workspace/
 
 ### Add package from git URL
 
-Gitがインストールされ、Unityから実行できる環境を用意します。Package Managerの`+ > Add package from git URL...`へ、検証済みの次のどちらかを入力します。
-
-Branch追従（Unity 6の新規Projectで導入・Preview・Bake確認済み）：
+Gitがインストールされ、Unityから実行できる環境を用意します。Production Preview 0.1.0は、Package Managerの`+ > Add package from git URL...`へ次のタグ固定URLを入力して導入します。
 
 ```text
-https://github.com/SILL-BILL/panda-motion-relay.git#feat/bake-evaluation-director
+https://github.com/SILL-BILL/panda-motion-relay.git#v0.1.0
 ```
 
-Commit固定（Unity 2022.3.22f1の新規Projectで確認済み）：
+実案件ではBranch追従URLを使わず、`Packages/packages-lock.json`で`v0.1.0`のRelease Commitへ固定されたことを確認してください。タグは後から移動しません。不具合修正は0.1.1等の新Version／新Tagとして配布します。SSH URLは導入例として扱いません。タグ導入確認の最終結果はGitHub Pre-release Notesにも記録します。
 
-```text
-https://github.com/SILL-BILL/panda-motion-relay.git#a8003ec7347d5c55b805af47c623cfaa49cf6ea3
-```
-
-再現性を保ちたい案件はCommit固定を使い、Branch追従は更新で内容が変わることに注意してください。両URLは同じ機能コードの0.1.0へ解決しました。認証情報なしのHTTPS読取も確認済みです。SSH URL導入は今回検証していないため、導入例として扱いません。
-
-上記は過去の承認済みLocal／Global機能コードの導入確認URLです。World → Rootは7109a23へCheckpoint済みですが、Driverの身体評価に関する潜在不具合のため、そのCommit単体は実戦投入停止扱いです。Driver評価修正は`feat/world-preserve-root-bake`のCheckpoint対象で、自動テスト・実戦Smoke検証済みです。ユーザー本人による最終GUI操作確認と実案件データでの受け入れは未実施です。修正を含むPackageを用意し、実戦投入前に確認してください。タグ付きReleaseもまだ用意していません。
+初回はSceneとTimelineをコピーし、Bake出力先に新規フォルダーを作って検証してください。既存AnimationClipは上書きしません。World → RootのTimeline再生には、13章のRemove Start Offset OFF設定が必要です。
 
 Unity公式の[ローカルPackage導入](https://docs.unity3d.com/2022.3/Documentation/Manual/upm-ui-local.html)と[Git依存関係](https://docs.unity3d.com/ja/2021.3/Manual/upm-git.html)も参照できます。
 
@@ -79,7 +71,7 @@ Unity公式の[ローカルPackage導入](https://docs.unity3d.com/2022.3/Docume
 | Evaluation Director | Bake中に全体を評価するDirector。必要ならMasterを指定 |
 | Local Bake | 現在の親階層・親の動きを活かすTransform Curveの出力 |
 | World → Root | 評価後Targetの最終World動作を、独立モデルのAnimator Rootと身体のCurveへ記録する出力 |
-| World → Hips（従来のGlobal） | 最終World Motionを、固定Reference空間に対するHips Curveへ集約する出力 |
+| World → Hips（API名Global） | 最終World Motionを、Identity Rootの独立モデル向けHips Curveへ集約する出力 |
 | Generic Clip | 骨格内のTransform Pathを直接動かす、Target専用のAnimationClip |
 
 ## 5. 最小構成
@@ -149,7 +141,7 @@ Overlapすると警告し、その区間は転送しません。Gapでは転送�
 
 ## 10. Relay Motion Root
 
-Relay Track自体を選択し、Inspectorの`Relay Motion Root`を設定します。初期値はOFFです。
+Relay Track自体を選択し、Inspectorの`Relay Motion Root`を設定します。新規Trackの初期値はONです。既存Timelineに保存済みのOFF／ONはそのまま保持します。Targetの配置を固定したい場合はOFFにします。
 
 | 設定 | Target Animator Root | Target Scale |
 | --- | --- | --- |
@@ -247,17 +239,25 @@ Quaternion符号の連続性とCut直前のConstant Tangentを保持します。
 
 「全体を移動するObject」への任意Bindingではなく、Clipを同一骨格CharacterのAnimator Rootへ適用します。Avatarなしの外側Rootだけを対象にするGeneric Root-only Bakeは別の未実装機能です。
 
-この方式だけは、全範囲の最終姿勢を先に評価して検証し、その後もう一度評価してCurveを採録します。検証中も取消可能です。非均一／可変／0以下のScale、Mirror、Shear、Hierarchyの親変更、Hips以外のMapped Bone Translation、内部のUnmapped Helperの移動・回転変化は拒否します。最初のFrameで不変の内部配置・Scaleを確定し、必要な追加Curveを黙って省略したClipは保存しません。Scale／Shearの静的異常は開始時にも検証します。
+両World方式は、全範囲の最終姿勢を先に評価して検証し、その後もう一度評価してCurveを採録します。検証中も取消可能です。非均一／可変／0以下のScale、Mirror、Shear、Hierarchyの親変更、Hips以外のMapped Bone Translation、内部のUnmapped Helperの移動・回転変化は拒否します。最初のFrameで不変の内部配置・Scaleを確定し、必要な追加Curveを黙って省略したClipは保存しません。Scale／Shearの静的異常は開始時にも検証します。
 
 この検証は揺れものSimulationを記録するためのものではありません。任意のスクリプト・物理状態が時間のSeekで再現しない場合は結果を保証しません。個別モデルの検証結果を確認してください。
 
-### World — Consolidate Motion to Hips（従来のGlobal）
+### Important: World → RootのTimeline再生設定
 
-12章と同じ操作で`Bake Mode`から`World — Consolidate Motion to Hips`を選び、別の新規`.anim`へ保存します。最終World Motionを、採録開始時の固定Referenceに対するHips Position／Quaternion Rotationへ集約します。既存APIの`BakeSpace.Global = 1`はこの方式のままです。新方式は`BakeSpace.World = 2`、Localは従来どおり0です。
+**World → Root ClipをTimelineで再生する場合、Animation ClipのRemove Start OffsetをOFFにしてください。** ONではBakeされたRootの開始位置・回転が除去され、World Bake本来の配置を再現できません。Animation Trackの位置・回転Offsetも0にし、元のParent Motion／Constraintを重ねないでください。
 
-**GlobalはAnimator Root Curveを出しません。再生先は採録開始時と同等のNeutral／Frozen Reference hierarchyを用意し、元のRoot／Parent Motionを重ねないでください。**
+World → HipsはRoot Curveを持たないため、Remove Start Offset項目が表示されない場合があります。これは正常です。
 
-Referenceは、最初のFrameのConstraintとRelayが完了した時点の「Hipsの親」のWorld行列・回転です。Bake前の任意の配置やワールド原点ではありません。この行列を固定して通常の`m_LocalPosition`／`m_LocalRotation`へ変換します。他のMapping済み骨はLocal Quaternion Rotationのままで、Scale／Secondary Curveは出しません。Relay Motion RootのON/OFFはPreview生成にはそのまま反映されます。
+### World — Consolidate Motion to Hips（API名Global）
+
+12章と同じ操作で`Bake Mode`から`World — Consolidate Motion to Hips`を選び、別の新規`.anim`へ保存します。親Hierarchy、Root Animation、ParentConstraint、Evaluation Director、Relayを評価した後のTarget最終World Poseを、独立モデルのHips Position／Quaternion Rotationへ集約します。Source Rootを直接読む方式ではありません。保存値は`BakeSpace.Global = 1`、World → Rootは`BakeSpace.World = 2`、Localは0です。
+
+**Animator RootはCurveなし・位置0・回転Identityで固定します。同一の内部Skeleton／固定Helperと、採録開始FrameのCharacter World Scaleを使い、元のRoot／Parent MotionやConstraintを重ねないでください。** Characterの親は位置0・回転Identity・Scale 1にします。
+
+固定Referenceは、独立出力モデルのIdentity Root・一定Character Scale・内部Helperから構築したHips親空間です。元Targetの開始時World親空間は使いません。最終Hips World位置をその固定行列の逆行列で、World回転を固定親回転の逆で変換して保存します。他のMapping済み骨はLocal Quaternion Rotationのみ、Scale／Secondary／Unmapped Curveは0です。Relay Motion RootのON/OFFはPreview生成に反映されます。
+
+0.1.0以前のCheckpointで使われた「開始時の元World親空間を凍結する」Global出力から挙動を修正しています。保存値1は維持しますが、旧Checkpointの再生条件は0.1.0の互換保証対象ではありません。
 
 | 目的 | 選択の目安 |
 | --- | --- |

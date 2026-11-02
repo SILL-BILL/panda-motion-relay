@@ -255,6 +255,8 @@ namespace SillBill.PandaMotionRelay.Tests
             setup.Director.playableAsset = timeline;
             // Relay first also verifies that animation output order does not delay a cut.
             var relayTrack = Own(timeline.CreateTrack<MotionRelayTrack>(null, "Relay"));
+            // These pre-existing body-only fixtures deliberately exercise root transfer OFF.
+            relayTrack.relayMotionRoot = false;
             setup.Director.SetGenericBinding(relayTrack, setup.Target);
             setup.AnimationTracks = new AnimationTrack[2];
             for (int i = 0; i < 2; i++)
