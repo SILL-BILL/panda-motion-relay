@@ -5,6 +5,7 @@ using System.Linq;
 using NUnit.Framework;
 using SillBill.PandaMotionRelay.Editor;
 using UnityEditor;
+using UnityEditor.Animations;
 using UnityEngine;
 using UnityEngine.Playables;
 using UnityEngine.TestTools;
@@ -53,7 +54,161 @@ namespace SillBill.PandaMotionRelay.Tests
         [UnityTest] public IEnumerator WorldToHips_RejectsHelperTranslation() { yield return new EnterPlayMode(); yield return CheckWorld("helper-position", BakeSpace.Global); yield return new ExitPlayMode(); }
         [UnityTest] public IEnumerator WorldToHips_RejectsHelperRotation() { yield return new EnterPlayMode(); yield return CheckWorld("helper-rotation", BakeSpace.Global); yield return new ExitPlayMode(); }
 
-        private IEnumerator AssertTimelineReplay(Animator animator, AnimationClip clip, List<WorldFrame> frames, bool hipsOutput, Action<int> beforeEvaluate = null)
+        [UnityTest] public IEnumerator Subframe_Local24() { yield return new EnterPlayMode(); yield return CheckSubframe(BakeSpace.Local, 24); yield return new ExitPlayMode(); }
+        [UnityTest] public IEnumerator Subframe_WorldRoot24() { yield return new EnterPlayMode(); yield return CheckSubframe(BakeSpace.World, 24); yield return new ExitPlayMode(); }
+        [UnityTest] public IEnumerator Subframe_WorldHips24() { yield return new EnterPlayMode(); yield return CheckSubframe(BakeSpace.Global, 24); yield return new ExitPlayMode(); }
+        [UnityTest] public IEnumerator Subframe_Local30RootOff() { yield return new EnterPlayMode(); yield return CheckSubframe(BakeSpace.Local, 30); yield return new ExitPlayMode(); }
+        [UnityTest] public IEnumerator Subframe_WorldHips60WithGap() { yield return new EnterPlayMode(); yield return CheckSubframe(BakeSpace.Global, 60); yield return new ExitPlayMode(); }
+
+        [Test]
+        public void Subframe_AcceptsVeryShortPositiveDuration()
+        {
+            var setup = CutTimeline();
+            // The public Timeline setter clamps to 1/60 second. Exercise serialized timing.
+            typeof(TimelineClip).GetField("m_Duration", System.Reflection.BindingFlags.Instance |
+                System.Reflection.BindingFlags.NonPublic).SetValue(setup.Clips[0], 1e-8);
+            Assert.That(setup.Clips[0].duration, Is.EqualTo(1e-8));
+            Assert.DoesNotThrow(() => HumanoidGenericBaker.Validate(BakeRequest(setup)));
+        }
+
+        [Test]
+        public void Subframe_RejectsUnrepresentableDistinctBoundariesWithContext()
+        {
+            var setup = CutTimeline();
+            setup.Clips[0].duration = 1 - 1e-10;
+            var error = Assert.Throws<ArgumentException>(() => HumanoidGenericBaker.Validate(BakeRequest(setup)));
+            Assert.That(error.Message, Does.Contain("float key precision").And.Contain("start=").And.Contain("FPS=60"));
+        }
+
+        private IEnumerator CheckSubframe(BakeSpace mode, int fps)
+        {
+            var nested = NestedBakeTimeline();
+            var setup = nested.Relay;
+            var timeline = (TimelineAsset)setup.Director.playableAsset;
+            timeline.editorSettings.frameRate = fps;
+            var request = BakeRequest(setup);
+            request.bakeSpace = mode;
+            request.evaluationDirector = nested.Master;
+            request.track.relayMotionRoot = fps != 30;
+            double first = fps == 24 ? 0 : .25 / fps;
+            double cut = 138.5 / fps;
+            double second = 239.75 / fps;
+            double last = 374.25 / fps;
+            setup.Clips[0].start = first; setup.Clips[0].duration = cut - first;
+            setup.Clips[1].start = fps == 60 ? 138.75 / fps : setup.Clips[0].end;
+            setup.Clips[1].duration = second - setup.Clips[1].start;
+            setup.Clips[2].start = setup.Clips[1].end; setup.Clips[2].duration = last - setup.Clips[2].start;
+            foreach (var control in ((TimelineAsset)nested.Master.playableAsset).GetOutputTracks().OfType<ControlTrack>().SelectMany(t => t.GetClips()))
+                control.duration = 18;
+            var parent = Own(new GameObject("SubframeOriginalParent")).transform;
+            parent.SetPositionAndRotation(new Vector3(1, 2, -3), Quaternion.Euler(0, 19, 0));
+            setup.Target.transform.SetParent(parent, false);
+            var input = new Dictionary<Animator, AnimationCurve>();
+            var sources = new[] { setup.A, setup.B };
+            for (int i = 0; i < sources.Length; i++)
+            {
+                var animation = (AnimationPlayableAsset)setup.AnimationTracks[i].GetClips().Single().asset;
+                animation.applyFootIK = false;
+                var curve = AnimationCurve.Linear(0, i == 0 ? -.8f : .8f, 18, i == 0 ? -.15f : .15f);
+                AnimationUtility.SetEditorCurve(animation.clip, EditorCurveBinding.FloatCurve("", typeof(Animator), "Left Arm Down-Up"), curve);
+                setup.AnimationTracks[i].GetClips().Single().duration = 18;
+                input.Add(sources[i], curve);
+                AddHiddenBakeRenderer(sources[i]);
+                sources[i].cullingMode = AnimatorCullingMode.CullUpdateTransforms;
+            }
+            var transforms = setup.Target.GetComponentsInChildren<Transform>(true);
+            var frames = new List<WorldFrame>();
+            var times = new List<float>();
+            int arm = Array.IndexOf(HumanTrait.MuscleName, "Left Arm Down-Up");
+            GameObject replay = null;
+            request.progress = _ =>
+            {
+                double time = nested.Master.time;
+                var active = setup.Clips.SingleOrDefault(c => c.start <= time && time < c.end);
+                var source = active == null ? null : ((MotionRelayClip)active.asset).source.Resolve(setup.Director);
+                Assert.That(SelectedBakeSource(setup.Director), Is.EqualTo(source), $"Ownership at {time:R}");
+                if (source != null)
+                {
+                    float expected = input[source].Evaluate((float)time);
+                    Assert.That(ReadPose(source).muscles[arm], Is.EqualTo(expected).Within(.04f));
+                    Assert.That(ReadPose(setup.Target).muscles[arm], Is.EqualTo(expected).Within(.05f));
+                }
+                Assert.That(sources.All(a => a.cullingMode == AnimatorCullingMode.AlwaysAnimate), Is.True);
+                times.Add((float)(time - first));
+                frames.Add(new WorldFrame(transforms));
+                if (replay == null)
+                {
+                    replay = Own(UnityEngine.Object.Instantiate(setup.Target.gameObject,
+                        mode == BakeSpace.Local ? parent : null, false));
+                    var animator = replay.GetComponent<Animator>();
+                    animator.avatar = null;
+                    animator.enabled = false;
+                    if (mode != BakeSpace.Local) replay.transform.SetPositionAndRotation(Vector3.zero, Quaternion.identity);
+                }
+            };
+
+            try
+            {
+                AnimationClip baked = null;
+                yield return HumanoidGenericBaker.Bake(request, value => baked = value);
+                Assert.That(sources.All(a => a.cullingMode == AnimatorCullingMode.CullUpdateTransforms), Is.True);
+                var bindings = AnimationUtility.GetCurveBindings(baked);
+                Assert.That(bindings.Any(b => b.propertyName.Contains("Scale")), Is.False);
+                Assert.That(bindings.Count(b => b.path == ""), Is.EqualTo(mode == BakeSpace.World || mode == BakeSpace.Local && fps != 30 ? 7 : 0));
+                var curve = AnimationUtility.GetEditorCurve(baked, bindings.First());
+                Assert.That(curve.keys.Select(k => k.time), Is.EqualTo(times));
+                for (int frame = (int)Math.Ceiling(first * fps); frame <= Math.Floor(last * fps); frame++)
+                    Assert.That(times, Does.Contain((float)(frame / (double)fps - first)));
+                var replayTimes = new List<float>(times);
+                var replayFrames = new List<WorldFrame>(frames);
+                foreach (double boundary in setup.Clips.SelectMany(c => new[] { c.start, c.end }).Distinct().Skip(1))
+                {
+                    float time = (float)(boundary - first);
+                    int index = times.IndexOf(time);
+                    Assert.That(index, Is.GreaterThan(0));
+                    Assert.That(time - times[index - 1], Is.LessThan(.000005f));
+                    Assert.That(AnimationUtility.GetKeyRightTangentMode(curve, index - 1), Is.EqualTo(AnimationUtility.TangentMode.Constant));
+                    float after = BitConverter.Int32BitsToSingle(BitConverter.SingleToInt32Bits(time) + 4);
+                    if (index + 1 < times.Count && after < times[index + 1])
+                    {
+                        replayTimes.Add(after);
+                        replayFrames.Add(frames[index]);
+                    }
+                }
+                var animator = replay.GetComponent<Animator>();
+                yield return AssertTimelineReplay(animator, baked, replayFrames, mode == BakeSpace.Global,
+                    sampleTime: i => replayTimes[i]);
+                // Reverse seeks exercise the same boundary pairs with no dependence on playback history.
+                var replayTransforms = replay.GetComponentsInChildren<Transform>(true);
+                animator.enabled = false;
+                for (int i = times.Count - 1; i >= 0; i--)
+                {
+                    baked.SampleAnimation(replay, times[i]);
+                    AssertWorldFrames(replayTransforms, frames[i], mode == BakeSpace.Global);
+                }
+                var controller = AnimatorController.CreateAnimatorControllerAtPath(bakeFolder + "/SubframeReplay.controller");
+                var state = controller.layers[0].stateMachine.AddState("Subframe");
+                state.motion = baked;
+                animator.runtimeAnimatorController = controller;
+                animator.enabled = true;
+                animator.speed = 0;
+                animator.Rebind();
+                // Normalized Animator time itself rounds. Check regular samples away from the step.
+                for (int i = 0; i < times.Count; i++)
+                {
+                    double frame = (times[i] + first) * fps;
+                    if (Math.Abs(frame - Math.Round(frame)) > .00001) continue;
+                    animator.Play("Subframe", 0, times[i] / baked.length);
+                    animator.Update(0);
+                    yield return null;
+                    AssertWorldFrames(replayTransforms, frames[i], mode == BakeSpace.Global);
+                }
+            }
+            finally { TearDown(); CleanBakeAssets(); }
+        }
+
+        private IEnumerator AssertTimelineReplay(Animator animator, AnimationClip clip, List<WorldFrame> frames, bool hipsOutput,
+            Action<int> beforeEvaluate = null, Func<int, double> sampleTime = null)
         {
             animator.avatar = null; animator.runtimeAnimatorController = null;
             animator.enabled = true; animator.cullingMode = AnimatorCullingMode.AlwaysAnimate; animator.applyRootMotion = false;
@@ -73,11 +228,15 @@ namespace SillBill.PandaMotionRelay.Tests
             for (int f = 0; f < frames.Count; f++)
             {
                 beforeEvaluate?.Invoke(f);
-                director.time = f / (double)clip.frameRate;
+                director.time = sampleTime != null ? sampleTime(f) : f / (double)clip.frameRate;
                 director.Evaluate();
                 yield return null;
                 Assert.That(animator.isHuman, Is.False);
-                AssertWorldFrames(transforms, frames[f], hipsOutput);
+                try { AssertWorldFrames(transforms, frames[f], hipsOutput); }
+                catch (AssertionException error) when (sampleTime != null)
+                {
+                    throw new AssertionException($"Timeline sample {f}, time {director.time:R}: {error.Message}");
+                }
                 if (hipsOutput) AssertWorld(animator.transform, Vector3.zero, Quaternion.identity);
             }
             director.Stop();

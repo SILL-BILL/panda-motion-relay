@@ -2,6 +2,10 @@ using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.Playables;
 
+#if UNITY_EDITOR
+[assembly: System.Runtime.CompilerServices.InternalsVisibleTo("SillBill.PandaMotionRelay.Editor")]
+#endif
+
 namespace SillBill.PandaMotionRelay
 {
     /// <summary>Transfers queued poses after animation has written the driver skeletons.</summary>
@@ -9,6 +13,28 @@ namespace SillBill.PandaMotionRelay
     {
         private static readonly List<MotionRelayMixer> pending = new List<MotionRelayMixer>();
         private static MotionRelayLateUpdate host;
+
+#if UNITY_EDITOR
+        private static PlayableDirector bakeDirector;
+        private static double bakeTime;
+
+        internal static void EvaluateBakeSample(PlayableDirector evaluation, PlayableDirector relay, double relayTime)
+        {
+            var previousDirector = bakeDirector;
+            double previousTime = bakeTime;
+            bakeDirector = relay;
+            bakeTime = relayTime;
+            try { evaluation.Evaluate(); }
+            finally
+            {
+                bakeDirector = previousDirector;
+                bakeTime = previousTime;
+            }
+        }
+
+        internal static double OwnershipTime(PlayableDirector director) =>
+            bakeDirector != null && director == bakeDirector ? bakeTime : director.time;
+#endif
 
         internal static void Schedule(MotionRelayMixer mixer)
         {

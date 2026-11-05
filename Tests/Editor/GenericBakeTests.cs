@@ -72,7 +72,7 @@ namespace SillBill.PandaMotionRelay.Tests
         [TestCase("track")]
         [TestCase("source")]
         [TestCase("overlap")]
-        [TestCase("subframe")]
+        [TestCase("nonfinite")]
         public void BakeRejectsInvalidTimelineConfiguration(string kind)
         {
             var setup = CutTimeline();
@@ -82,7 +82,8 @@ namespace SillBill.PandaMotionRelay.Tests
             else if (kind == "track") request.track = null;
             else if (kind == "source") setup.Director.SetReferenceValue(((MotionRelayClip)setup.Clips[1].asset).source.exposedName, null);
             else if (kind == "overlap") setup.Clips[0].duration = 1.5;
-            else setup.Clips[0].duration = .123;
+            else typeof(TimelineClip).GetField("m_Duration", System.Reflection.BindingFlags.Instance |
+                System.Reflection.BindingFlags.NonPublic).SetValue(setup.Clips[0], double.NaN);
             Assert.Throws<ArgumentException>(() => HumanoidGenericBaker.Validate(request));
         }
 

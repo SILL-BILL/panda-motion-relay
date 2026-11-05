@@ -1,3 +1,57 @@
+# Production Preview 0.1.1 — Subframe bake verification
+
+Verified on 2026-11-05 (Asia/Tokyo) on `fix/subframe-relay-bake`, based on `fa0df464e67662ca98c0b4d78b0b29ea06c02355`. These results cover automated tests and replay on protected copies. GUI acceptance by Gonsaku in the production project is still pending.
+
+## Sampling and cut behavior
+
+All three modes use one schedule in both validation and recording. The schedule contains the Timeline FPS grid in the actual first-start to last-end range, plus the authored starts and ends. Output keys are relative to the first start. Boundary samples take priority when a regular grid sample resolves to the same float key. Clips can stay at their authored times without snapping.
+
+With fractional boundaries, a point up to four float ULPs before each cut captures the outgoing pose. The interval from the outgoing key to the boundary key is stepped. The evaluator uses the authored double time for the half-open ownership test, including when a parent Control Clip maps the evaluation clock. Gaps have no Source. Integer-only timelines retain their previous key cadence and stepped interval. Distinct authored boundaries that cannot have distinct float keys are rejected with the clip name and timing. Bake range remains limited to 100000 frames and the complete schedule to 100001 points.
+
+An initial Unity 6 run using a one-ULP separation showed a Hips mismatch in 30 fps native Timeline replay at the outgoing key. With the four-ULP guard, the outgoing, boundary and just-after probes pass. Normal Generic Animator replay is checked at grid samples away from the boundary because its normalized-time API adds its own rounding.
+
+## Automated regression
+
+| Editor | Passed | Failed | Skipped |
+| --- | ---: | ---: | ---: |
+| Unity 6000.0.84f1 | 190 | 0 | 0 |
+| Unity 2022.3.22f1 | 190 | 0 | 0 |
+
+The seven additional cases cover the authored 24 fps sequence `[0, 138.5), [138.5, 239.75), [239.75, 374.25)` in all three modes, a fractional start and Root OFF at 30 fps, a Gap at 60 fps, serialized positive duration of 1e-8 seconds, and a float key collision between distinct boundaries. Replay covers the frame grid, boundary keys, stepped outgoing keys, just-after probes and reverse seeks. Generated Humanoid Source and Target arm muscles are checked against independently authored input curves. The former alignment-rejection case now tests rejection of non-finite timing. Existing overlap, nested evaluation, Constraint, cancellation, quaternion, new-track default and Culling checks remain in the suite.
+
+## Protected production scene copy
+
+The previously saved protected copy was loaded and given fractional timings in memory. The source switches at 138.5 and 240.75 frames, followed by the 373.25 end. At 24 fps these produced the following stored keys, with a constant outgoing tangent at each preceding key.
+
+| Boundary frame | Outgoing key (s) | Boundary key (s) | Source ownership |
+| --- | ---: | ---: | --- |
+| 138.5 | 5.77083158 | 5.77083349 | A → B |
+| 240.75 | 10.0312462 | 10.03125 | B → A |
+| 373.25 | 15.5520792 | 15.552083 | A → none |
+
+Each mode passed actual AnimationTrack replay at all 380 sampled times and normal Generic Animator playback at 373 regular samples. Checks compare the Root when applicable and 52 mapped bones, including Hips, Head, Hands and Feet. World → Root playback uses Remove Start Offset OFF.
+
+| Mode | Root / Hips curves | Unity 6 max position error | Unity 2022 max position error |
+| --- | --- | ---: | ---: |
+| Local with Root OFF | 0 / 7 | 0.000005252 | 0.000005136 |
+| Local with Root ON | 7 / 7 | 0.000005252 | 0.000005136 |
+| World → Root | 7 / 7 | 0.000005254 | 0.000005138 |
+| World → Hips | 0 / 7 | 0.000005473 | 0.000005306 |
+
+Maximum rotation error was 0° in all modes. Scale and secondary curves were zero, and used-Driver Culling Modes were restored. Independently measured within-Driver muscle variation was approximately 2.0773 and 0.6939. Head, hand and foot local rotation variation was approximately 18.88°–67.25°. Both ordinary Editor runs ended with zero errors and warnings.
+
+An additional Unity 6 run baked and replayed a 1e-8-second clip and a boundary one double ULP after frame 240. All modes passed 379 Timeline samples and 372 normal Animator samples. The near-grid boundary used one float key at 10 seconds and retained its authored double time for ownership. The short cut retained distinct keys at 9.999996e-9 and 1e-8 seconds.
+
+The saved Scene and Timeline hashes in both ordinary Unity copies match their pre-run hashes.
+
+## VCC output replay
+
+The Unity 2022-generated World clips, prefabs and references were copied into the existing VCC project's LocalOnly and verified by SHA-256. In the World SDK 3.10.5 environment, both modes passed 380 Timeline and 373 normal Generic Animator comparisons. Maximum position error was 0.000005138 for World → Root and 0.000005306 for World → Hips. Maximum rotation error was 0°. The local run reported zero errors and one SDK warning about playing without ClientSim in the empty inspection scene. Actual VRChat upload and client-side verification have not been performed.
+
+The evidence files are local-only, including `subframe-six-final.xml`, `subframe-2022-final.xml`, `subframe-production-six.json`, `subframe-production-2022.json`, `subframe-production-short.json` and `subframe-production-vcc.json`. GUI review of the patch remains pending.
+
+---
+
 # Production Preview 0.1.0 — Release Gate Verification
 
 Verified on 2026-11-02 (Asia/Tokyo), branch `fix/world-hips-preview-release`, starting at `c2f93962783909f9a13844919e3fcf55c355e9f6`. Package version remains **0.1.0**, minimum Unity **2022.3.22f1**, Timeline dependency **1.7.6**. No VRChat SDK dependency is added. The sections below the historical divider describe earlier checkpoints and their earlier Global semantics; they are not the current replay specification.

@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.1 — Production Preview
+
+- Support fractional-frame Relay Clip timing in Local, World → Root and World → Hips bakes. Exact cuts use the authored boundary times, including gap edges, so clips do not need to be snapped again.
+- Sample the normal Timeline frame grid plus actual clip boundaries and outgoing poses immediately before cuts. Keep integer-only bakes compatible and report invalid or unrepresentable clip timing with context.
+
 ## 0.1.0 — Production Preview (2026-11-02)
 
 - Includes multi-source exact cuts, Humanoid relay, optional motion-root transfer, nested Evaluation Director and target-specific Local / World → Root / World → Hips Generic baking.

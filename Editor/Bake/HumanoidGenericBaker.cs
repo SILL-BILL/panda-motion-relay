@@ -36,7 +36,10 @@ namespace SillBill.PandaMotionRelay.Editor
         private static bool busy;
         public static bool IsBaking => busy;
 
-        public static void Validate(GenericBakeRequest request)
+        public static void Validate(GenericBakeRequest request) => ValidateAndPlan(request, out _, out _, out _);
+
+        private static List<BakeSample> ValidateAndPlan(GenericBakeRequest request, out double fps,
+            out TimelineClip[] clips, out BakeEvaluationScope scope)
         {
             if (request == null || request.director == null || request.track == null)
                 throw new ArgumentException("Select a PlayableDirector and a Motion Relay Track.");
@@ -52,17 +55,19 @@ namespace SillBill.PandaMotionRelay.Editor
                 throw new ArgumentException("The director must be active and enabled.");
             if (timeline.GetOutputTracks().OfType<MotionRelayTrack>().Count(t => !t.mutedInHierarchy && request.director.GetGenericBinding(t) == target) != 1)
                 throw new ArgumentException("Only one enabled Relay Track may drive the target.");
-            double fps = timeline.editorSettings.frameRate;
+            fps = timeline.editorSettings.frameRate;
             if (double.IsNaN(fps) || double.IsInfinity(fps) || fps <= 0 || fps > 240)
                 throw new ArgumentException("Timeline frame rate must be greater than zero and at most 240 fps.");
-            var clips = request.track.GetClips().OrderBy(c => c.start).ToArray();
+            clips = request.track.GetClips().OrderBy(c => c.start).ToArray();
             if (clips.Length == 0) throw new ArgumentException("The Relay Track contains no clips.");
             double previousEnd = double.NegativeInfinity;
             foreach (var clip in clips)
             {
-                if (clip.start < previousEnd) throw new ArgumentException("Relay Clip overlap: bake refused.");
-                if (clip.start < 0 || clip.duration <= 0 || !FrameAligned(clip.start, fps) || !FrameAligned(clip.end, fps))
-                    throw new ArgumentException("Relay Clip boundaries must align to Timeline frames and have a positive duration.");
+                if (!Finite(clip.start) || !Finite(clip.end) || !Finite(clip.duration) ||
+                    clip.start < 0 || clip.duration <= 0 || clip.end <= clip.start)
+                    throw InvalidTiming(clip, fps, "expected finite times, a non-negative start and a positive representable duration");
+                if (clip.start < previousEnd)
+                    throw InvalidTiming(clip, fps, "Relay Clip overlap: bake refused");
                 var asset = clip.asset as MotionRelayClip;
                 var source = asset != null ? asset.source.Resolve(request.director) : null;
                 if (!HumanoidPoseRelay.IsValid(source) || !source.enabled || !source.gameObject.activeInHierarchy ||
@@ -72,20 +77,109 @@ namespace SillBill.PandaMotionRelay.Editor
             }
             if ((previousEnd - clips[0].start) * fps > 100000)
                 throw new ArgumentException("Bake range exceeds 100000 frames. Split the Timeline before baking.");
-            new BakeEvaluationScope(request, clips[0].start, previousEnd);
+            scope = new BakeEvaluationScope(request, clips[0].start, previousEnd);
             if (request.bakeSpace != BakeSpace.Local) new WorldBakeValidation(target).ValidateStatic();
             var paths = new HashSet<string>();
             foreach (var bone in MappedBones(target))
                 if (bone == target.transform || !bone.IsChildOf(target.transform) || !paths.Add(AnimationUtility.CalculateTransformPath(bone, target.transform)))
                     throw new ArgumentException("Mapped bones require unique paths below the target Animator root.");
             ValidateOutputPath(request.outputPath);
+            return BuildSamplePlan(clips, fps);
         }
 
-        private static bool FrameAligned(double time, double fps)
+        private static bool Finite(double value) => !double.IsNaN(value) && !double.IsInfinity(value);
+
+        private static ArgumentException InvalidTiming(TimelineClip clip, double fps, string reason) =>
+            new ArgumentException(FormattableString.Invariant(
+                $"Relay Clip '{clip.displayName}' (start={clip.start:R}, end={clip.end:R}, duration={clip.duration:R}, FPS={fps:R}): {reason}."));
+
+        private readonly struct BakeSample
         {
-            return !double.IsNaN(time) && !double.IsInfinity(time) && Math.Abs(time * fps - Math.Round(time * fps)) < 0.00001;
+            public readonly double TimelineTime;
+            public readonly float KeyTime;
+            public readonly bool StartsStep;
+
+            public BakeSample(double timelineTime, float keyTime, bool startsStep = false)
+            {
+                TimelineTime = timelineTime;
+                KeyTime = keyTime;
+                StartsStep = startsStep;
+            }
         }
 
+        private static bool OnFrame(double time, double fps)
+        {
+            double frame = time * fps;
+            // Ignore only round-off in the seconds-to-frames conversion.
+            return Math.Abs(frame - Math.Round(frame)) <= Math.Max(1, Math.Abs(frame)) * 8.881784197001252e-16;
+        }
+
+        private static List<BakeSample> BuildSamplePlan(TimelineClip[] clips, double fps)
+        {
+            const int maxSamples = 100001;
+            double first = clips[0].start;
+            double last = clips[clips.Length - 1].end;
+            if (last * fps >= 4503599627370496d)
+                throw InvalidTiming(clips[clips.Length - 1], fps, "frame indices exceed the precision of Timeline time");
+
+            // AnimationClip stores key times as floats. Reserve authored boundaries before
+            // inserting the frame grid so a near-coincident grid sample cannot replace a cut.
+            var byKey = new SortedDictionary<float, BakeSample>();
+            bool hasSubframes = false;
+            foreach (var clip in clips)
+            {
+                AddBoundary(clip.start, clip);
+                AddBoundary(clip.end, clip);
+            }
+
+            long firstFrame = (long)Math.Ceiling(first * fps);
+            long lastFrame = (long)Math.Floor(last * fps);
+            for (long frame = firstFrame; frame <= lastFrame; frame++)
+            {
+                double time = frame / fps;
+                if (time < first || time > last) continue;
+                float key = (float)(time - first);
+                if (!byKey.ContainsKey(key)) byKey.Add(key, new BakeSample(time, key));
+            }
+
+            var samples = new List<BakeSample>();
+            foreach (var sample in byKey.Values)
+            {
+                if (samples.Count > 0 && hasSubframes && sample.StartsStep)
+                {
+                    // Leave a few float ULPs for native AnimationClipPlayable's time conversion.
+                    // The only held interval is from this key to the actual cut key.
+                    int bits = BitConverter.SingleToInt32Bits(sample.KeyTime);
+                    float key = BitConverter.Int32BitsToSingle(Math.Max(0, bits - 4));
+                    var previous = samples[samples.Count - 1];
+                    if (key <= previous.KeyTime)
+                        key = BitConverter.Int32BitsToSingle(bits - 1);
+                    if (key > previous.KeyTime)
+                    {
+                        double time = first + key;
+                        if (time <= previous.TimelineTime || time >= sample.TimelineTime)
+                            time = previous.TimelineTime + (sample.TimelineTime - previous.TimelineTime) * .5;
+                        if (time > previous.TimelineTime && time < sample.TimelineTime)
+                            samples.Add(new BakeSample(time, key));
+                    }
+                }
+                samples.Add(sample);
+                if (samples.Count > maxSamples)
+                    throw new ArgumentException("Bake exceeds 100001 samples including subframe keys. Split the Timeline before baking.");
+            }
+            return samples;
+
+            void AddBoundary(double time, TimelineClip clip)
+            {
+                float key = (float)(time - first);
+                if (byKey.TryGetValue(key, out var existing) && existing.TimelineTime != time)
+                    throw InvalidTiming(clip, fps, "distinct boundaries coincide at AnimationClip float key precision");
+                byKey[key] = new BakeSample(time, key, true);
+                hasSubframes |= !OnFrame(time, fps);
+                if (byKey.Count > maxSamples)
+                    throw new ArgumentException("Bake exceeds 100001 samples including subframe keys. Split the Timeline before baking.");
+            }
+        }
         private static void ValidateOutputPath(string path)
         {
             if (string.IsNullOrWhiteSpace(path) || !path.StartsWith("Assets/", StringComparison.Ordinal) || path.Contains("\\") ||
@@ -110,17 +204,12 @@ namespace SillBill.PandaMotionRelay.Editor
 
         public static IEnumerator Bake(GenericBakeRequest request, Action<AnimationClip> completed)
         {
-            Validate(request);
+            var samples = ValidateAndPlan(request, out double fps, out var clips, out var scope);
             if (!Application.isPlaying || EditorApplication.isPaused)
                 throw new InvalidOperationException("Bake requires unpaused Play Mode so native constraints can evaluate.");
             if (busy) throw new InvalidOperationException("Another bake is already running.");
             var director = request.director;
             var target = (Animator)director.GetGenericBinding(request.track);
-            var timeline = (TimelineAsset)director.playableAsset;
-            double fps = timeline.editorSettings.frameRate;
-            var clips = request.track.GetClips().OrderBy(c => c.start).ToArray();
-            long first = (long)Math.Round(clips[0].start * fps);
-            long last = (long)Math.Round(clips[clips.Length - 1].end * fps);
             var channels = new List<BoneCurves>();
             bool global = request.bakeSpace == BakeSpace.Global;
             bool world = request.bakeSpace == BakeSpace.World;
@@ -128,7 +217,6 @@ namespace SillBill.PandaMotionRelay.Editor
             var hips = target.GetBoneTransform(HumanBodyBones.Hips);
             foreach (var bone in MappedBones(target))
                 channels.Add(new BoneCurves(bone, AnimationUtility.CalculateTransformPath(bone, target.transform), bone == hips, false, global && bone == hips, world, target.transform));
-            var scope = new BakeEvaluationScope(request, first / fps, last / fps);
             var directorState = new BakeDirectorState(scope.Directors);
             var scene = new BakeSceneState();
             var driverEvaluationState = new BakeDriverEvaluationState(clips.Select(c => ((MotionRelayClip)c.asset).source.Resolve(director)));
@@ -143,49 +231,42 @@ namespace SillBill.PandaMotionRelay.Editor
                 // Validate the complete evaluated range before recording any World curves.
                 // Procedural/constraint results cannot be inferred from clip bindings alone.
                 if (worldValidation != null)
-                    for (long frame = first; frame <= last; frame++)
+                    for (int i = 0; i < samples.Count; i++)
                     {
                         if (request.cancel != null && request.cancel()) throw new OperationCanceledException("Bake canceled.");
-                        scope.Evaluation.time = scope.EvaluationTime(frame / fps);
-                        scope.Evaluation.Evaluate();
+                        scope.EvaluateSample(director, samples[i].TimelineTime);
                         yield return null;
                         MotionRelayEvaluation.ApplyPendingPoses();
                         worldValidation.Sample();
-                        request.validationProgress?.Invoke((float)(frame - first + 1) / (last - first + 1));
+                        request.validationProgress?.Invoke((float)(i + 1) / samples.Count);
                     }
                 // Reuse the preview graph: rebuilding can change AnimationTrack scene offsets
                 // and its defaults for channels not explicitly animated by a driver clip.
-                for (long frame = first; frame <= last; frame++)
+                for (int i = 0; i < samples.Count; i++)
                 {
                     if (request.cancel != null && request.cancel()) throw new OperationCanceledException("Bake canceled.");
-                    scope.Evaluation.time = scope.EvaluationTime(frame / fps);
-                    scope.Evaluation.Evaluate();
+                    scope.EvaluateSample(director, samples[i].TimelineTime);
                     // A normal coroutine resumes on the following Update, after the evaluated
                     // frame's ConstraintManager and Relay LateUpdate. Avoid WaitForEndOfFrame,
                     // which can stall in batch mode or while the Game view is not visible.
                     yield return null;
                     MotionRelayEvaluation.ApplyPendingPoses();
                     worldValidation?.Sample();
-                    float time = (float)((frame - first) / fps);
+                    float time = samples[i].KeyTime;
                     foreach (var channel in channels) channel.Sample(time);
-                    request.progress?.Invoke((float)(frame - first + 1) / (last - first + 1));
+                    request.progress?.Invoke((float)(i + 1) / samples.Count);
                 }
                 result = new AnimationClip { name = Path.GetFileNameWithoutExtension(request.outputPath), frameRate = (float)fps, legacy = false };
                 foreach (var channel in channels) channel.Write(result);
                 result.EnsureQuaternionContinuity();
                 // Protect the interval immediately before each ownership change. Gaps also
                 // terminate ownership; a cut is never converted into a sub-frame crossfade.
-                var boundaries = new HashSet<int>();
-                foreach (var clip in clips)
-                {
-                    boundaries.Add((int)Math.Round(clip.start * fps - first));
-                    boundaries.Add((int)Math.Round(clip.end * fps - first));
-                }
+                var boundaries = Enumerable.Range(1, samples.Count - 1).Where(i => samples[i].StartsStep).ToArray();
                 foreach (var binding in AnimationUtility.GetCurveBindings(result))
                 {
                     var curve = AnimationUtility.GetEditorCurve(result, binding);
                     foreach (int boundary in boundaries)
-                        if (boundary > 0 && boundary < curve.length)
+                        if (boundary < curve.length)
                             AnimationUtility.SetKeyRightTangentMode(curve, boundary - 1, AnimationUtility.TangentMode.Constant);
                     AnimationUtility.SetEditorCurve(result, binding, curve);
                 }

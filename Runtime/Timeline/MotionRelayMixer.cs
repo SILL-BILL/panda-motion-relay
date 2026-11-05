@@ -24,6 +24,9 @@ namespace SillBill.PandaMotionRelay
             // Clip occupancy, not blend/ease weights, is authoritative. The half-open
             // interval gives an adjacent incoming clip sole ownership of its start time.
             double time = Director != null ? Director.time : playable.GetTime();
+#if UNITY_EDITOR
+            if (Director != null) time = MotionRelayEvaluation.OwnershipTime(Director);
+#endif
             for (int i = 0; Clips != null && i < Clips.Length; i++)
             {
                 if (time < Clips[i].start || time >= Clips[i].end) continue;

@@ -19,6 +19,13 @@ namespace SillBill.PandaMotionRelay.Editor
             return control == null ? relayTime : control.start + (relayTime - control.clipIn) / control.timeScale;
         }
 
+        public void EvaluateSample(PlayableDirector relay, double relayTime)
+        {
+            Evaluation.time = EvaluationTime(relayTime);
+            // Control tracks can round the child clock when converting from parent time.
+            MotionRelayEvaluation.EvaluateBakeSample(Evaluation, relay, relayTime);
+        }
+
         public BakeEvaluationScope(GenericBakeRequest request, double first, double last)
         {
             Evaluation = request.evaluationDirector != null ? request.evaluationDirector : request.director;

@@ -17,9 +17,9 @@ Driver_Float  ─┘
 
 ## 現在のステータス
 
-**0.1.0 — Production Preview / Internal Production Use**（実戦投入前プレビュー版・社内／個人制作向け）。Exact Cut、Humanoid姿勢転送、オプションのMotion Root転送、3方式のBake、一意な直接Master/Child構成の評価に対応します。
+**0.1.1 — Production Preview / Internal Production Use**（実戦投入前プレビュー版・社内／個人制作向け）。Exact Cut、Humanoid姿勢転送、オプションのMotion Root転送、3方式のBake、一意な直接Master/Child構成の評価に対応します。
 
-Unity 6／通常Unity 2022.3で各183自動テストと、実戦Sceneコピーの4条件（Local Root OFF／ON、World → Root、World → Hips）のGeneric Timeline再生がPASS。非表示Driverの身体Motionも確認しています。すべてのUnity／VRChat環境を保証する段階ではありません。
+Unity 6／通常Unity 2022.3で各190件の自動テストと、実戦Sceneコピーの4条件（Local Root OFF／ON、World → Root、World → Hips）のGeneric Timeline再生がPASS。非表示Driverの身体Motionも確認しています。
 
 ## インストール
 
@@ -28,7 +28,7 @@ RepositoryをUnity Projectの外へ取得し、Package Managerの`+ > Add packag
 実案件ではPackage Managerの`Add package from git URL...`へ次のタグ固定URLを指定します。
 
 ```text
-https://github.com/SILL-BILL/panda-motion-relay.git#v0.1.0
+https://github.com/SILL-BILL/panda-motion-relay.git#v0.1.1
 ```
 
 Branch追従URLは使わず、`Packages/packages-lock.json`の解決Commitを確認してください。初回はScene／Timelineのコピーと新規Bake出力フォルダーで検証します。v0.1.0タグは移動せず、修正は新Version／新Tagで配布します。
@@ -55,6 +55,8 @@ Humanoidモデルとモーションを用意した状態から始めます。初
 8. Scene保存後、Play Mode・Pause解除にして`Tools > Panda Motion Relay > Bake Humanoid to Generic`を開き、Director・身体側Relay Track・`Bake Mode`を指定して新規`.anim`へ保存します。
 
 Exact Cutは`start <= t < end`です。Overlapは無効、Gapは新たな転送なし。詳細操作は[正式マニュアル](Documentation~/Manual.md)を参照してください。
+
+v0.1.1では、3つのBake ModeでClipをSnapし直す必要はありません。Exact CutはClip境界の実時刻を使います。異なる境界がAnimationClipのfloat精度で同じキー時刻になる場合は、Clip名と時刻を示して停止します。ゴン作本人による実案件でのGUI確認はこれからです。
 
 Bake中は使用するDriver Animatorを一時的に`AlwaysAnimate`へ切り替え、終了・取消・例外時に元のCulling Modeへ戻します。RendererがOFFでも身体アニメーションを採録できます。手動でCulling Modeを変更する必要はありません。Driver本体・親・Animatorは引き続き常時Activeにしてください。
 
