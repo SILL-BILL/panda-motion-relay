@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.2 — Production Preview
+
+- Treat overlaps of up to 1 ps between otherwise adjacent Relay Clips as boundary roundoff. The saved production case overlapped by about 0.313 ps. Preview and Bake share the incoming Clip's authored cut time. Longer overlaps and distinct boundaries that collide at float key precision are rejected.
+- Passed all 192 Editor tests on each supported Editor version, four Bake and replay configurations on a protected production copy, and local VCC World SDK replay. World → Root Timeline playback requires Remove Start Offset OFF.
+- Production GUI acceptance by Gonsaku and VRChat upload, client, Quest and PhysBone verification are pending.
+
 ## 0.1.1 — Production Preview
 
 - Support fractional-frame Relay Clip timing in Local, World → Root and World → Hips bakes. Exact cuts use the authored boundary times, including gap edges, so clips do not need to be snapped again.

@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.Playables;
+using UnityEngine.Timeline;
 
 #if UNITY_EDITOR
 [assembly: System.Runtime.CompilerServices.InternalsVisibleTo("SillBill.PandaMotionRelay.Editor")]
@@ -13,6 +14,15 @@ namespace SillBill.PandaMotionRelay
     {
         private static readonly List<MotionRelayMixer> pending = new List<MotionRelayMixer>();
         private static MotionRelayLateUpdate host;
+
+        // Timeline 1.7/1.8 represent interval boundaries on a 1 ps time grid.
+        internal static bool IsBoundaryRoundoff(TimelineClip outgoing, TimelineClip incoming)
+        {
+            double overlap = outgoing.end - incoming.start;
+            return overlap > 0 && overlap <= 1e-12 && outgoing.start < incoming.start &&
+                outgoing.end < incoming.end && overlap < outgoing.duration * .5 &&
+                overlap < incoming.duration * .5;
+        }
 
 #if UNITY_EDITOR
         private static PlayableDirector bakeDirector;

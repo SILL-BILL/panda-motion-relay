@@ -1,6 +1,6 @@
 # Panda Motion Relay Manual
 
-Version 0.1.1 — Production Preview / Internal Production Use（実戦投入前プレビュー版・社内／個人制作向け）。ゴン作本人による実案件でのGUI確認はこれからです。
+Version 0.1.2 — Production Preview / Internal Production Use（実戦投入前プレビュー版・社内／個人制作向け）。Unity 6と2022.3の全Editorテストは各192件合格しました。保存済み実戦コピーとVCCのWorld SDK環境でのローカル再生結果は[検証記録](../VERIFICATION.md)を参照してください。VRChatアップロード、実機、Quest、PhysBoneの確認と、ゴン作本人による実案件でのGUI確認は未実施です。
 
 このマニュアルは、HumanoidキャラクターをUnityのTimelineで動かしたことがあるアニメーター向けです。読み始める場所は[インストール](#3-インストール)、最初の作業は[最小構成](#5-最小構成)です。数値実績は[VERIFICATION.md](../VERIFICATION.md)、概要は[README.md](../README.md)を参照してください。
 
@@ -45,13 +45,13 @@ workspace/
 
 ### Add package from git URL
 
-Gitがインストールされ、Unityから実行できる環境を用意します。Production Preview 0.1.1は、Package Managerの`+ > Add package from git URL...`へ次のタグ固定URLを入力して導入します。
+Gitがインストールされ、Unityから実行できる環境を用意します。Production Preview 0.1.2は、Package Managerの`+ > Add package from git URL...`へ次のタグ固定URLを入力して導入します。
 
 ```text
-https://github.com/SILL-BILL/panda-motion-relay.git#v0.1.1
+https://github.com/SILL-BILL/panda-motion-relay.git#v0.1.2
 ```
 
-実案件ではBranch追従URLを使わず、`Packages/packages-lock.json`で`v0.1.1`のRelease Commitへ固定されたことを確認してください。タグは後から移動しません。不具合修正は0.1.2等の新Version／新Tagとして配布します。SSH URLは導入例として扱いません。タグ導入確認の最終結果はGitHub Pre-release Notesにも記録します。
+実案件ではBranch追従URLを使わず、`Packages/packages-lock.json`で`v0.1.2`のRelease Commitへ固定されたことを確認してください。タグは後から移動しません。以降の不具合修正も新Version／新Tagとして配布します。SSH URLは導入例として扱いません。タグ導入確認の最終結果はGitHub Pre-release Notesにも記録します。
 
 初回はSceneとTimelineをコピーし、Bake出力先に新規フォルダーを作って検証してください。既存AnimationClipは上書きしません。World → RootのTimeline再生には、13章のRemove Start Offset OFF設定が必要です。
 
@@ -137,7 +137,7 @@ Frame:             0       24      48       72
 
 所有区間は`start <= t < end`です。上の例ならFrame 23はNormal、Frame 24はFloat、Frame 48はNormal、終端Frame 72はSourceなしです。Exact Cutは整数・小数を問わずClip境界の実時刻を使います。GapではRelayは姿勢を書き込みません。自動Blend、EaseやClip WeightによるSource混合はありません。
 
-Overlapすると警告し、その区間は転送しません。Gapでは転送と保留中の書き込みを取り消します。他の制御がなければ直前のTarget姿勢がTransform値として残りますが、前Sourceへの追従を続けるわけではありません。
+保存済みTimelineでは、前Clipのendが後続Clipのstartを約0.313 ps超える事例がありました。隣接Clipで1 ps以下の境界丸め誤差は、PreviewとBakeの両方で後続Clipのstartを切替時刻として扱います。元のClip時刻は保存時の値を維持します。許容範囲を超えるOverlapでは警告し、その区間は転送しません。Gapでは転送と保留中の書き込みを取り消します。他の制御がなければ直前のTarget姿勢がTransform値として残りますが、前Sourceへの追従を続けるわけではありません。
 
 ## 10. Relay Motion Root
 
@@ -216,7 +216,7 @@ Bake開始時は、選択したRelay Trackの**全ClipのSource**を検証しま
 | Animator Root（Relay Motion Root ON時） | Parent空間のLocal Position + Quaternion Rotation、計7 Curve |
 | Scale／Mapping外の骨 | 出力なし |
 
-採録範囲は最初のRelay Clip startから最後のendまでで、両端を含みます。出力Clipの時刻0は最初のstartです。v0.1.1では、Timeline FPSの通常フレームに各Clipの実際のstart／endと切替直前の採録点を加えます。ClipをSnapし直す必要はありません。直前の姿勢まで補間し、境界のキーで段差を付けます。整数境界のみの構成では従来のキー構成を使います。
+採録範囲は最初のRelay Clip startから最後のendまでで、両端を含みます。出力Clipの時刻0は最初のstartです。Timeline FPSの通常フレームに各Clipの実際のstart／endと切替直前の採録点を加えます。ClipをSnapし直す必要はありません。直前の姿勢まで補間し、境界のキーで段差を付けます。整数境界のみの構成では従来のキー構成を使います。
 
 Frame Rateは0より大きく240以下、範囲は最大100000フレーム、追加点を含む採録数は最大100001点です。異なる境界が出力AnimationClipのfloat精度で同じキー時刻になる場合は、該当Clipと時刻を表示して停止します。時刻の妥当性、Overlap、Source／Target、出力先も採録前に検証します。
 

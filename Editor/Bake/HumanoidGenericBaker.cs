@@ -60,21 +60,23 @@ namespace SillBill.PandaMotionRelay.Editor
                 throw new ArgumentException("Timeline frame rate must be greater than zero and at most 240 fps.");
             clips = request.track.GetClips().OrderBy(c => c.start).ToArray();
             if (clips.Length == 0) throw new ArgumentException("The Relay Track contains no clips.");
-            double previousEnd = double.NegativeInfinity;
+            TimelineClip previous = null;
             foreach (var clip in clips)
             {
                 if (!Finite(clip.start) || !Finite(clip.end) || !Finite(clip.duration) ||
                     clip.start < 0 || clip.duration <= 0 || clip.end <= clip.start)
                     throw InvalidTiming(clip, fps, "expected finite times, a non-negative start and a positive representable duration");
-                if (clip.start < previousEnd)
+                if (previous != null && clip.start < previous.end &&
+                    !MotionRelayEvaluation.IsBoundaryRoundoff(previous, clip))
                     throw InvalidTiming(clip, fps, "Relay Clip overlap: bake refused");
                 var asset = clip.asset as MotionRelayClip;
                 var source = asset != null ? asset.source.Resolve(request.director) : null;
                 if (!HumanoidPoseRelay.IsValid(source) || !source.enabled || !source.gameObject.activeInHierarchy ||
                     source == target || source.transform.IsChildOf(target.transform) || target.transform.IsChildOf(source.transform))
                     throw new ArgumentException("Every Relay Clip requires an active, valid, independent Humanoid source. Clip: '" + clip.displayName + "', Source: " + (source != null ? source.name : "<unassigned>") + ". 全ClipのDriver本体・親・Animatorを常時有効にしてください。Activation Trackをミュートし、非表示化はRendererだけで行います。");
-                previousEnd = clip.end;
+                previous = clip;
             }
+            double previousEnd = previous.end;
             if ((previousEnd - clips[0].start) * fps > 100000)
                 throw new ArgumentException("Bake range exceeds 100000 frames. Split the Timeline before baking.");
             scope = new BakeEvaluationScope(request, clips[0].start, previousEnd);
@@ -126,10 +128,13 @@ namespace SillBill.PandaMotionRelay.Editor
             // inserting the frame grid so a near-coincident grid sample cannot replace a cut.
             var byKey = new SortedDictionary<float, BakeSample>();
             bool hasSubframes = false;
-            foreach (var clip in clips)
+            for (int i = 0; i < clips.Length; i++)
             {
+                var clip = clips[i];
                 AddBoundary(clip.start, clip);
-                AddBoundary(clip.end, clip);
+                double end = i + 1 < clips.Length && MotionRelayEvaluation.IsBoundaryRoundoff(clip, clips[i + 1])
+                    ? clips[i + 1].start : clip.end;
+                AddBoundary(end, clip);
             }
 
             long firstFrame = (long)Math.Ceiling(first * fps);

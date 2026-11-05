@@ -59,6 +59,21 @@ namespace SillBill.PandaMotionRelay.Tests
         [UnityTest] public IEnumerator Subframe_WorldHips24() { yield return new EnterPlayMode(); yield return CheckSubframe(BakeSpace.Global, 24); yield return new ExitPlayMode(); }
         [UnityTest] public IEnumerator Subframe_Local30RootOff() { yield return new EnterPlayMode(); yield return CheckSubframe(BakeSpace.Local, 30); yield return new ExitPlayMode(); }
         [UnityTest] public IEnumerator Subframe_WorldHips60WithGap() { yield return new EnterPlayMode(); yield return CheckSubframe(BakeSpace.Global, 60); yield return new ExitPlayMode(); }
+        [UnityTest] public IEnumerator Subframe_BoundaryRoundoffUsesIncomingSource() { yield return new EnterPlayMode(); yield return CheckSubframe(BakeSpace.Local, 24, true); yield return new ExitPlayMode(); }
+
+        [Test]
+        public void Subframe_AcceptsReportedBoundaryRoundoff()
+        {
+            var setup = CutTimeline();
+            ((TimelineAsset)setup.Director.playableAsset).editorSettings.frameRate = 24;
+            setup.Clips[0].duration = 84.5;
+            setup.Clips[1].start = 84.5;
+            setup.Clips[1].duration = 91.33333333333334;
+            setup.Clips[2].start = 175.83333333333303;
+            setup.Clips[2].duration = 19.79167175293;
+            Assert.That(setup.Clips[1].end, Is.GreaterThan(setup.Clips[2].start));
+            Assert.DoesNotThrow(() => HumanoidGenericBaker.Validate(BakeRequest(setup)));
+        }
 
         [Test]
         public void Subframe_AcceptsVeryShortPositiveDuration()
@@ -80,7 +95,7 @@ namespace SillBill.PandaMotionRelay.Tests
             Assert.That(error.Message, Does.Contain("float key precision").And.Contain("start=").And.Contain("FPS=60"));
         }
 
-        private IEnumerator CheckSubframe(BakeSpace mode, int fps)
+        private IEnumerator CheckSubframe(BakeSpace mode, int fps, bool boundaryRoundoff = false)
         {
             var nested = NestedBakeTimeline();
             var setup = nested.Relay;
@@ -96,6 +111,7 @@ namespace SillBill.PandaMotionRelay.Tests
             double last = 374.25 / fps;
             setup.Clips[0].start = first; setup.Clips[0].duration = cut - first;
             setup.Clips[1].start = fps == 60 ? 138.75 / fps : setup.Clips[0].end;
+            if (boundaryRoundoff) setup.Clips[1].start -= 3e-13;
             setup.Clips[1].duration = second - setup.Clips[1].start;
             setup.Clips[2].start = setup.Clips[1].end; setup.Clips[2].duration = last - setup.Clips[2].start;
             foreach (var control in ((TimelineAsset)nested.Master.playableAsset).GetOutputTracks().OfType<ControlTrack>().SelectMany(t => t.GetClips()))
@@ -124,7 +140,7 @@ namespace SillBill.PandaMotionRelay.Tests
             request.progress = _ =>
             {
                 double time = nested.Master.time;
-                var active = setup.Clips.SingleOrDefault(c => c.start <= time && time < c.end);
+                var active = setup.Clips.LastOrDefault(c => c.start <= time && time < c.end);
                 var source = active == null ? null : ((MotionRelayClip)active.asset).source.Resolve(setup.Director);
                 Assert.That(SelectedBakeSource(setup.Director), Is.EqualTo(source), $"Ownership at {time:R}");
                 if (source != null)
@@ -161,7 +177,10 @@ namespace SillBill.PandaMotionRelay.Tests
                     Assert.That(times, Does.Contain((float)(frame / (double)fps - first)));
                 var replayTimes = new List<float>(times);
                 var replayFrames = new List<WorldFrame>(frames);
-                foreach (double boundary in setup.Clips.SelectMany(c => new[] { c.start, c.end }).Distinct().Skip(1))
+                var boundaries = setup.Clips.SelectMany(c => new[] { c.start, c.end }).Distinct().Skip(1);
+                if (boundaryRoundoff)
+                    boundaries = boundaries.Where(t => t != setup.Clips[0].end);
+                foreach (double boundary in boundaries)
                 {
                     float time = (float)(boundary - first);
                     int index = times.IndexOf(time);

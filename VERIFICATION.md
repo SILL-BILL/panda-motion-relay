@@ -1,3 +1,24 @@
+# Production Preview 0.1.2 — Timeline boundary roundoff
+
+Unity 6000.0.84f1 and 2022.3.22f1 each passed all 192 Editor tests. The focused 13 tests were also run separately and are included in the full suite. Cases cover ordinary overlap rejection, gaps, fractional cuts, float key collisions, and the reported 24 fps boundary.
+
+On the protected copy of the saved production Timeline, v0.1.1 refused to bake. The previous Clip ended at 175.83333333333334 s and the incoming Clip started at 175.83333333333303 s, a difference of about 0.313 ps. Preview and Bake now share the exact incoming start for roundoff of up to 1 ps at adjacent Clip boundaries. Longer overlaps are rejected. Distinct boundaries that collapse to one AnimationClip float key are rejected with timing and Clip context. The saved Scene and Timeline files retained their original SHA-256 hashes.
+
+Unity 2022.3.22f1 baked and replayed the saved timings in all four configurations. Preview was checked before, at and after the reported cut, on reverse seek and at frame 0. Bake Source ownership was checked across the range, including the stepped keys around the cut. Each mode passed 4,808 native Timeline samples and 4,797 Generic Animator samples. Generic Animator checks use regular samples away from the exact cut because the normalized-time API adds rounding. World → Root Timeline playback uses Remove Start Offset OFF.
+
+| Mode | Timeline max position error | Generic Animator max position error |
+| --- | ---: | ---: |
+| Local Root OFF | 0.0000611101 | 0.0000611101 |
+| Local Root ON | 0.0000611125 | 0.0000611125 |
+| World → Root | 0.0000608572 | 0.0000608572 |
+| World → Hips | 0.0000622857 | 0.0000622857 |
+
+All maximum rotation errors were 0°. Scale and secondary curves were zero, and the Driver Animator culling settings were restored. The protected copy finished with zero Console errors and warnings.
+
+The same World outputs passed both playback checks in the VCC-created World SDK 3.10.5 project with the same measured errors. The VCC run finished with zero Console errors and one SDK warning that the empty inspection scene ran without ClientSim. VRChat upload, client, Quest and PhysBone verification have yet to be performed. Production GUI acceptance by Gonsaku is pending.
+
+---
+
 # Production Preview 0.1.1 — Subframe bake verification
 
 Verified on 2026-11-05 (Asia/Tokyo) on `fix/subframe-relay-bake`, based on `fa0df464e67662ca98c0b4d78b0b29ea06c02355`. These results cover automated tests and replay on protected copies. GUI acceptance by Gonsaku in the production project is still pending.

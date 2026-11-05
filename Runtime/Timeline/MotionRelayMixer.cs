@@ -21,6 +21,7 @@ namespace SillBill.PandaMotionRelay
             var target = playerData as Animator;
             Animator source = null;
             int activeCount = 0;
+            int selected = -1;
             // Clip occupancy, not blend/ease weights, is authoritative. The half-open
             // interval gives an adjacent incoming clip sole ownership of its start time.
             double time = Director != null ? Director.time : playable.GetTime();
@@ -31,7 +32,22 @@ namespace SillBill.PandaMotionRelay
             {
                 if (time < Clips[i].start || time >= Clips[i].end) continue;
                 activeCount++;
-                source = ((ScriptPlayable<MotionRelayBehaviour>)playable.GetInput(i)).GetBehaviour().Source;
+                if (activeCount == 2)
+                {
+                    int earlier = Clips[selected].start < Clips[i].start ? selected : i;
+                    int later = earlier == selected ? i : selected;
+                    if (MotionRelayEvaluation.IsBoundaryRoundoff(Clips[earlier], Clips[later]))
+                    {
+                        selected = later;
+                        continue;
+                    }
+                }
+                if (activeCount > 1)
+                {
+                    selected = -1;
+                    break;
+                }
+                selected = i;
             }
 
             if (activeCount == 0)
@@ -40,12 +56,13 @@ namespace SillBill.PandaMotionRelay
                 lastWarning = null;
                 return;
             }
-            if (activeCount > 1)
+            if (selected < 0)
             {
                 Release();
                 Warn("Panda Motion Relay: overlapping Relay Clips are invalid. No pose will be relayed until exactly one clip occupies the current time.", target);
                 return;
             }
+            source = ((ScriptPlayable<MotionRelayBehaviour>)playable.GetInput(selected)).GetBehaviour().Source;
             if (!HumanoidPoseRelay.IsValid(source) ||
                 !HumanoidPoseRelay.IsValid(target) || source == target ||
                 source.transform.IsChildOf(target.transform) || target.transform.IsChildOf(source.transform))
