@@ -63,6 +63,8 @@ namespace SillBill.PandaMotionRelay.Tests
         [UnityTest] public IEnumerator Subframe_MicroGapLocal() { yield return new EnterPlayMode(); yield return CheckSubframe(BakeSpace.Local, 24, microGap: true); yield return new ExitPlayMode(); }
         [UnityTest] public IEnumerator Subframe_MicroGapWorldRoot() { yield return new EnterPlayMode(); yield return CheckSubframe(BakeSpace.World, 24, microGap: true); yield return new ExitPlayMode(); }
         [UnityTest] public IEnumerator Subframe_MicroGapWorldHips() { yield return new EnterPlayMode(); yield return CheckSubframe(BakeSpace.Global, 24, microGap: true); yield return new ExitPlayMode(); }
+        [UnityTest] public IEnumerator Subframe_OptimalReductionPreservesMicroGapCut() { yield return new EnterPlayMode(); yield return CheckSubframe(BakeSpace.World, 24, microGap: true, reduction: 1f); yield return new ExitPlayMode(); }
+        [UnityTest] public IEnumerator Subframe_OptimalReductionPreservesGapEdges() { yield return new EnterPlayMode(); yield return CheckSubframe(BakeSpace.Global, 60, reduction: .5f); yield return new ExitPlayMode(); }
 
         [TestCase(false)]
         [TestCase(true)]
@@ -134,7 +136,7 @@ namespace SillBill.PandaMotionRelay.Tests
             Assert.That(error.Message, Does.Contain("float key precision").And.Contain("start=").And.Contain("FPS=60"));
         }
 
-        private IEnumerator CheckSubframe(BakeSpace mode, int fps, bool boundaryRoundoff = false, bool microGap = false)
+        private IEnumerator CheckSubframe(BakeSpace mode, int fps, bool boundaryRoundoff = false, bool microGap = false, float reduction = 0f)
         {
             var nested = NestedBakeTimeline();
             var setup = nested.Relay;
@@ -142,6 +144,7 @@ namespace SillBill.PandaMotionRelay.Tests
             timeline.editorSettings.frameRate = fps;
             var request = BakeRequest(setup);
             request.bakeSpace = mode;
+            request.optimalReduction = reduction;
             request.evaluationDirector = nested.Master;
             request.track.relayMotionRoot = fps != 30;
             double first = fps == 24 ? 0 : .25 / fps;
@@ -231,7 +234,11 @@ namespace SillBill.PandaMotionRelay.Tests
                 Assert.That(bindings.Any(b => b.propertyName.Contains("Scale")), Is.False);
                 Assert.That(bindings.Count(b => b.path == ""), Is.EqualTo(mode == BakeSpace.World || mode == BakeSpace.Local && fps != 30 ? 7 : 0));
                 var curve = AnimationUtility.GetEditorCurve(baked, bindings.First());
-                Assert.That(curve.keys.Select(k => k.time), Is.EqualTo(times));
+                if (reduction == 0f)
+                    Assert.That(curve.keys.Select(k => k.time), Is.EqualTo(times));
+                else
+                    Assert.That(bindings.Sum(b => AnimationUtility.GetEditorCurve(baked, b).length),
+                        Is.LessThan(bindings.Length * times.Count / 2), "Reduced clip should keep substantially fewer keys");
                 for (int frame = (int)Math.Ceiling(first * fps); frame <= Math.Floor(last * fps); frame++)
                     Assert.That(times, Does.Contain((float)(frame / (double)fps - first)));
                 var replayTimes = new List<float>(times);
@@ -245,7 +252,14 @@ namespace SillBill.PandaMotionRelay.Tests
                     int index = times.IndexOf(time);
                     Assert.That(index, Is.GreaterThan(0));
                     Assert.That(time - times[index - 1], Is.LessThan(.000005f));
-                    Assert.That(AnimationUtility.GetKeyRightTangentMode(curve, index - 1), Is.EqualTo(AnimationUtility.TangentMode.Constant));
+                    foreach (var binding in bindings)
+                    {
+                        var outputCurve = AnimationUtility.GetEditorCurve(baked, binding);
+                        int cutKey = Array.FindIndex(outputCurve.keys, key => key.time == time);
+                        Assert.That(cutKey, Is.GreaterThan(0));
+                        Assert.That(outputCurve[cutKey - 1].time, Is.EqualTo(times[index - 1]));
+                        Assert.That(AnimationUtility.GetKeyRightTangentMode(outputCurve, cutKey - 1), Is.EqualTo(AnimationUtility.TangentMode.Constant));
+                    }
                     float after = BitConverter.Int32BitsToSingle(BitConverter.SingleToInt32Bits(time) + 4);
                     if (index + 1 < times.Count && after < times[index + 1])
                     {

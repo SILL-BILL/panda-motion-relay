@@ -1,3 +1,11 @@
+# 1.0.4 — Optimal Reduction verification
+
+Unity 6000.0.84f1 and 2022.3.22f1 each passed all 200 Editor tests. The reduction tests cover a micro-gap cut at strength 1 and a regular gap at strength 0.5. They check that the clip retains substantially fewer keys and preserves the exact boundary and outgoing keys on every curve. Native Timeline and Generic Animator replay are checked against the sampled target pose.
+
+The same protected production Timeline and Local Root OFF bake from the 1.0.3 verification were used to compare file size. At strength 1, the AnimationClip decreased from 192,784,776 bytes to 172,317,777 bytes, a reduction of about 10.6%. The Unity 2022.3 run passed 4,809 Timeline and 4,797 Generic Animator comparisons. Maximum world position error was 0.00037718 Unity units. The run finished with zero Console errors and warnings.
+
+---
+
 # Production Preview 1.0.3 — Micro-gap bake verification
 
 Unity 6000.0.84f1 and 2022.3.22f1 each passed all 198 Editor tests. The new tests use the reported saved Clip times, check that the option defaults OFF and larger colliding gaps are rejected, and compare Preview ownership, stepped Timeline replay and Generic Animator replay with the option ON in Local, World → Root and World → Hips. The per-track setting survives serialization.

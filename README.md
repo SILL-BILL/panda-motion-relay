@@ -17,9 +17,9 @@ Driver_Float  ─┘
 
 ## 現在のステータス
 
-**1.0.3 — Production Preview / Internal Production Use**（実戦投入前プレビュー版・社内／個人制作向け）。Exact Cut、Humanoid姿勢転送、オプションのMotion Root転送、3方式のBake、一意な直接Master/Child構成の評価に対応します。
+**1.0.4**。Exact Cut、Humanoid姿勢転送、オプションのMotion Root転送、3方式のBake、一意な直接Master/Child構成の評価に対応します。
 
-Unity 6／通常Unity 2022.3で各190件の自動テストと、実戦Sceneコピーの4条件（Local Root OFF／ON、World → Root、World → Hips）のGeneric Timeline再生がPASS。非表示Driverの身体Motionも確認しています。
+Unity 6／Unity 2022.3の自動テストと実戦Sceneコピーでの再生結果を[検証記録](VERIFICATION.md)にまとめています。
 
 ## インストール
 
@@ -28,7 +28,7 @@ RepositoryをUnity Projectの外へ取得し、Package Managerの`+ > Add packag
 実案件ではPackage Managerの`Add package from git URL...`へ次のタグ固定URLを指定します。
 
 ```text
-https://github.com/SILL-BILL/panda-motion-relay.git#v1.0.3
+https://github.com/SILL-BILL/panda-motion-relay.git#v1.0.4
 ```
 
 Branch追従URLは使わず、`Packages/packages-lock.json`の解決Commitを確認してください。初回はScene／Timelineのコピーと新規Bake出力フォルダーで検証します。v0.1.0タグは移動せず、修正は新Version／新Tagで配布します。
@@ -56,9 +56,9 @@ Humanoidモデルとモーションを用意した状態から始めます。初
 
 Exact Cutは`start <= t < end`です。隣接Clipの境界が丸め誤差で1 ps以下重なる場合は、後続Clipのstartで切り替えます。実案件では約0.313 psの重なりを確認しました。許容範囲を超えるOverlapは拒否し、既定ではGapで新たな転送を行いません。詳細操作は[正式マニュアル](Documentation~/Manual.md)を参照してください。
 
-Bake Windowで対象のRelay Trackを選び、**Close Unrepresentable Micro Gaps** をONにすると、10 µs以下で出力のfloatキー時刻が衝突するGapを補正できます。約2.54 µsの隙間を含む実戦事例に対応します。画面に表示された補正量と切替時刻を確認してください。PreviewとBakeは後続Clipの開始まで前Sourceを継続します。設定はTrack単位で既定OFFです。Clipの時刻は書き換えません。
+Bake Windowで対象のRelay Trackを選び、**Close Micro Gaps** をONにすると、10 µs以下で出力のfloatキー時刻が衝突するGapを補正できます。約2.54 µsの隙間を含む実戦事例に対応します。画面に表示された補正量と切替時刻を確認してください。PreviewとBakeは後続Clipの開始まで前Sourceを継続します。設定はTrack単位で既定OFFです。Clipの時刻は書き換えません。
 
-3つのBake ModeでClipをSnapし直す必要はありません。PreviewとBakeのExact Cutは、同じClip境界の実時刻を使います。異なる境界がAnimationClipのfloat精度で同じキー時刻になる場合は、Clip名と時刻を示して停止します。Unity 6と2022.3の全Editorテストは各198件合格し、保存済み実戦データのコピーで4条件のBakeと再生、VCCのWorld SDK環境でWorld出力のローカル再生を確認しました。VRChatへのアップロード、実機、Quest、PhysBoneの確認と、ゴン作本人による実案件でのGUI確認は未実施です。
+3つのBake ModeでClipをSnapし直す必要はありません。PreviewとBakeのExact Cutは、同じClip境界の実時刻を使います。異なる境界がAnimationClipのfloat精度で同じキー時刻になる場合は、Clip名と時刻を示して停止します。v1.0.3では保存済み実戦データのコピーで4条件のBakeと再生、VCCのWorld SDK環境でWorld出力のローカル再生を確認しました。VRChatへのアップロード、実機、Quest、PhysBoneの確認と、ゴン作本人による実案件でのGUI確認は未実施です。
 
 Bake中は使用するDriver Animatorを一時的に`AlwaysAnimate`へ切り替え、終了・取消・例外時に元のCulling Modeへ戻します。RendererがOFFでも身体アニメーションを採録できます。手動でCulling Modeを変更する必要はありません。Driver本体・親・Animatorは引き続き常時Activeにしてください。
 
@@ -71,6 +71,8 @@ Bake中は使用するDriver Animatorを一時的に`AlwaysAnimate`へ切り替�
 | 独立モデルで全体移動をHipsへ集約 | World — Consolidate Motion to Hips | Rootの位置0・回転Identityで固定。同一内部SkeletonとCharacter一定World Scale。元Root／Parent Motionを重ねない |
 
 成果物はHumanoid muscle Clipではなく、同一内部HierarchyのTarget専用Generic Transform Clipです。Humanoid再Retargetでの一致は保証しません。全方式でScale／Secondary Curveは出しません。LocalはRelay Motion Root ON時にRoot Curveを持ち、World → Rootは最終Target World位置・回転を必ずRootへ記録し、World → HipsはRoot Curveを持ちません。
+
+Bake Windowの **Optimal Reduction** は0〜1で指定できます。0は全キーを保持し、値を上げると位置・回転の許容誤差内でキーを間引きます。切替点とその直前のキーは保持します。
 
 **Important: World → Root ClipをTimelineで再生する場合は、Animation ClipのRemove Start OffsetをOFFにしてください。** ONではBakeしたRootの開始位置・回転が除去され、元のWorld配置を再現できません。World → HipsはRoot Curveがないため、この項目が表示されない場合があります。
 
@@ -96,7 +98,7 @@ VCCは成果物の検品環境です。VCCでのリアルタイムRelay Preview�
 
 ## Known Limitations
 
-Blend、Relative Offset、Custom Root、Position Only／Rotation Only、Generic Mapping、Scale／Secondary Bone Bake、Key Reduction、Batch Bake、Driver Mesh補助UIは未対応です。非一様／可変Scale・Shear、純粋なEdit ModeでのParentConstraint Bake、PhysBone実機Simulationは保証しません。
+Blend、Relative Offset、Custom Root、Position Only／Rotation Only、Generic Mapping、Scale／Secondary Bone Bake、Batch Bake、Driver Mesh補助UIは未対応です。非一様／可変Scale・Shear、純粋なEdit ModeでのParentConstraint Bake、PhysBone実機Simulationは保証しません。
 
 対象Sceneは事前保存し、案件ごとに出力Clipを再生検証してください。制約の詳細は[Manual](Documentation~/Manual.md#19-known-limitations)にまとめています。
 

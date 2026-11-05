@@ -25,6 +25,7 @@ namespace SillBill.PandaMotionRelay.Editor
         public MotionRelayTrack track;
         public string outputPath;
         public BakeSpace bakeSpace = BakeSpace.Local;
+        public float optimalReduction;
         public Action<float> progress;
         public Action<float> validationProgress;
         public Func<bool> cancel;
@@ -45,6 +46,8 @@ namespace SillBill.PandaMotionRelay.Editor
                 throw new ArgumentException("Select a PlayableDirector and a Motion Relay Track.");
             if (request.bakeSpace != BakeSpace.Local && request.bakeSpace != BakeSpace.Global && request.bakeSpace != BakeSpace.World)
                 throw new ArgumentException("Select Local, World to Root, or World to Hips Bake Mode.");
+            if (!Finite(request.optimalReduction) || request.optimalReduction < 0f || request.optimalReduction > 1f)
+                throw new ArgumentException("Optimal Reduction must be between 0 and 1.");
             var timeline = request.director.playableAsset as TimelineAsset;
             if (timeline == null || !timeline.GetOutputTracks().Contains(request.track) || request.track.mutedInHierarchy)
                 throw new ArgumentException("The selected track must be an enabled output track of the director's Timeline.");
@@ -211,6 +214,7 @@ namespace SillBill.PandaMotionRelay.Editor
         public static IEnumerator Bake(GenericBakeRequest request, Action<AnimationClip> completed)
         {
             var samples = ValidateAndPlan(request, out double fps, out var clips, out var scope);
+            float reduction = request.optimalReduction;
             if (!Application.isPlaying || EditorApplication.isPaused)
                 throw new InvalidOperationException("Bake requires unpaused Play Mode so native constraints can evaluate.");
             if (busy) throw new InvalidOperationException("Another bake is already running.");
@@ -263,17 +267,30 @@ namespace SillBill.PandaMotionRelay.Editor
                     request.progress?.Invoke((float)(i + 1) / samples.Count);
                 }
                 result = new AnimationClip { name = Path.GetFileNameWithoutExtension(request.outputPath), frameRate = (float)fps, legacy = false };
-                foreach (var channel in channels) channel.Write(result);
-                result.EnsureQuaternionContinuity();
                 // Protect the interval immediately before each ownership change. Gaps also
                 // terminate ownership; a cut is never converted into a sub-frame crossfade.
-                var boundaries = Enumerable.Range(1, samples.Count - 1).Where(i => samples[i].StartsStep).ToArray();
+                var anchors = new SortedSet<int> { 0, samples.Count - 1 };
+                var stepStarts = new HashSet<float>();
+                for (int i = 1; i < samples.Count; i++)
+                {
+                    if (!samples[i].StartsStep) continue;
+                    anchors.Add(i - 1);
+                    anchors.Add(i);
+                    stepStarts.Add(samples[i - 1].KeyTime);
+                }
+                foreach (var channel in channels)
+                {
+                    if (request.cancel != null && request.cancel()) throw new OperationCanceledException("Bake canceled.");
+                    channel.Write(result, reduction, anchors);
+                    if (reduction > 0f) yield return null;
+                }
+                result.EnsureQuaternionContinuity();
                 foreach (var binding in AnimationUtility.GetCurveBindings(result))
                 {
                     var curve = AnimationUtility.GetEditorCurve(result, binding);
-                    foreach (int boundary in boundaries)
-                        if (boundary < curve.length)
-                            AnimationUtility.SetKeyRightTangentMode(curve, boundary - 1, AnimationUtility.TangentMode.Constant);
+                    for (int i = 0; i < curve.length; i++)
+                        if (stepStarts.Contains(curve[i].time))
+                            AnimationUtility.SetKeyRightTangentMode(curve, i, AnimationUtility.TangentMode.Constant);
                     AnimationUtility.SetEditorCurve(result, binding, curve);
                 }
                 // Check again immediately before saving to prevent an accidental overwrite.
@@ -361,11 +378,26 @@ namespace SillBill.PandaMotionRelay.Editor
                 keys[4].Add(new Keyframe(time, value.x)); keys[5].Add(new Keyframe(time, value.y)); keys[6].Add(new Keyframe(time, value.z));
             }
 
-            public void Write(AnimationClip clip)
+            public void Write(AnimationClip clip, float reduction, SortedSet<int> anchors)
             {
+                bool[] rotationKeys = null;
+                bool[] positionKeys = null;
+                if (reduction > 0f)
+                {
+                    // Quaternion chord length is stable even for angles too small for a float dot/acos test.
+                    float rotationLimit = 2f * Mathf.Sin(0.05f * reduction * Mathf.Deg2Rad / 4f);
+                    rotationKeys = Reduce(anchors, rotationLimit * rotationLimit, RotationErrorSquared);
+                    if (position)
+                    {
+                        float positionLimit = 0.0001f * reduction;
+                        positionKeys = Reduce(anchors, positionLimit * positionLimit, PositionErrorSquared);
+                    }
+                }
                 for (int i = 0; i < keys.Length; i++)
                 {
-                    var curve = new AnimationCurve(keys[i].ToArray());
+                    var retained = i < 4 ? rotationKeys : positionKeys;
+                    var curve = new AnimationCurve(retained == null ? keys[i].ToArray() :
+                        keys[i].Where((key, index) => retained[index]).ToArray());
                     for (int key = 0; key < curve.length; key++)
                     {
                         AnimationUtility.SetKeyLeftTangentMode(curve, key, AnimationUtility.TangentMode.Linear);
@@ -374,6 +406,73 @@ namespace SillBill.PandaMotionRelay.Editor
                     string property = i < 4 ? "m_LocalRotation." + "xyzw"[i] : "m_LocalPosition." + "xyz"[i - 4];
                     AnimationUtility.SetEditorCurve(clip, EditorCurveBinding.FloatCurve(path, typeof(Transform), property), curve);
                 }
+            }
+
+            private bool[] Reduce(SortedSet<int> anchors, float limitSquared, Func<int, int, int, float, float> errorSquared)
+            {
+                var retained = new bool[keys[0].Count];
+                var spans = new Stack<(int Start, int End)>();
+                int previousAnchor = 0;
+                foreach (int anchor in anchors)
+                {
+                    retained[anchor] = true;
+                    if (anchor - previousAnchor > 1) spans.Push((previousAnchor, anchor));
+                    previousAnchor = anchor;
+                }
+
+                // Split at the worst sample until every retained span fits the error limit.
+                while (spans.Count > 0)
+                {
+                    var (start, end) = spans.Pop();
+                    float startTime = keys[0][start].time;
+                    float duration = keys[0][end].time - startTime;
+                    float worstError = limitSquared;
+                    int split = -1;
+                    for (int i = start + 1; i < end; i++)
+                    {
+                        float t = (keys[0][i].time - startTime) / duration;
+                        float error = errorSquared(start, end, i, t);
+                        if (float.IsNaN(error) || float.IsPositiveInfinity(error))
+                        {
+                            split = start + (end - start) / 2;
+                            break;
+                        }
+                        if (error <= worstError) continue;
+                        worstError = error;
+                        split = i;
+                    }
+                    if (split < 0) continue;
+                    // Keep long, pathological spans from repeatedly peeling one key off an end.
+                    int quarter = (end - start) / 4;
+                    if (quarter > 8 && (split - start < quarter || end - split < quarter))
+                        split = start + (end - start) / 2;
+                    retained[split] = true;
+                    if (split - start > 1) spans.Push((start, split));
+                    if (end - split > 1) spans.Push((split, end));
+                }
+                return retained;
+            }
+
+            private Vector3 PositionAt(int index) =>
+                new Vector3(keys[4][index].value, keys[5][index].value, keys[6][index].value);
+
+            private Quaternion RotationAt(int index) =>
+                new Quaternion(keys[0][index].value, keys[1][index].value, keys[2][index].value, keys[3][index].value);
+
+            private float PositionErrorSquared(int start, int end, int index, float t) =>
+                (Vector3.LerpUnclamped(PositionAt(start), PositionAt(end), t) - PositionAt(index)).sqrMagnitude;
+
+            private float RotationErrorSquared(int start, int end, int index, float t)
+            {
+                var from = RotationAt(start);
+                var to = RotationAt(end);
+                // Retain intermediate samples when removing them would reverse the quaternion path.
+                if (Quaternion.Dot(from, to) <= 0f) return float.PositiveInfinity;
+                var interpolated = Quaternion.LerpUnclamped(from, to, t);
+                var expected = RotationAt(index);
+                var difference = new Vector4(interpolated.x - expected.x, interpolated.y - expected.y,
+                    interpolated.z - expected.z, interpolated.w - expected.w);
+                return difference.sqrMagnitude;
             }
         }
     }

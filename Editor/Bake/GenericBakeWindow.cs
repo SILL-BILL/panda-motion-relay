@@ -14,6 +14,7 @@ namespace SillBill.PandaMotionRelay.Editor
         private PlayableDirector evaluationDirector;
         private int trackIndex;
         [SerializeField] private BakeSpace bakeSpace = BakeSpace.Local;
+        [SerializeField] private float optimalReduction;
 
         [MenuItem("Tools/Panda Motion Relay/Bake Humanoid to Generic")]
         public static void Open()
@@ -45,7 +46,7 @@ namespace SillBill.PandaMotionRelay.Editor
             var settings = new SerializedObject(selectedTrack);
             settings.Update();
             EditorGUILayout.PropertyField(settings.FindProperty("closeUnrepresentableMicroGaps"),
-                new GUIContent("Close Unrepresentable Micro Gaps", "10 µs以下で、Bakeのfloatキー時刻が衝突するGapだけを補正。後続Clip開始まで前Sourceを継続します。Previewにも適用されます。"));
+                new GUIContent("Close Micro Gaps", "10 µs以下で、Bakeのfloatキー時刻が衝突するGapだけを補正。後続Clip開始まで前Sourceを継続します。Previewにも適用されます。"));
             settings.ApplyModifiedProperties();
             if (selectedTrack.closeUnrepresentableMicroGaps)
             {
@@ -56,7 +57,10 @@ namespace SillBill.PandaMotionRelay.Editor
                             $"'{clips[i - 1].displayName}' → '{clips[i].displayName}': Gap {(clips[i].start - clips[i - 1].end) * 1e6:F6} µs。切替 {clips[i].start:R} s。Preview/Bakeとも前Sourceをこの時刻まで継続します。"), MessageType.Warning);
             }
             EditorGUILayout.HelpBox("全ClipのDriverは、使用区間外も本体・親・Animatorを有効にします。Activation Trackをミュートし、隠す場合はRendererのみOFFにしてください。", MessageType.Info);
-            EditorGUILayout.HelpBox("Raw per-frame Generic bake for this Humanoid target. Mapped bones only; no scale or secondary-bone curves. Uses the Timeline frame rate and the first-to-last Relay Clip range.", MessageType.Info);
+            optimalReduction = EditorGUILayout.Slider(new GUIContent("Optimal Reduction",
+                "0 keeps every sampled key. At 1, allow up to 0.0001 position units and 0.05 degrees per bone at sampled times. Exact cuts are preserved."),
+                optimalReduction, 0f, 1f);
+            EditorGUILayout.HelpBox("Generic bake for this Humanoid target. Mapped bones only; no scale or secondary-bone curves. Samples at the Timeline frame rate across the Relay Clip range.", MessageType.Info);
             if (!Application.isPlaying || EditorApplication.isPaused)
                 EditorGUILayout.HelpBox("Enter unpaused Play Mode before baking so animation and native constraints can evaluate. The Director and scene transforms are restored after baking.", MessageType.Info);
             using (new EditorGUI.DisabledScope(!Application.isPlaying || EditorApplication.isPaused || HumanoidGenericBaker.IsBaking))
@@ -64,7 +68,11 @@ namespace SillBill.PandaMotionRelay.Editor
                 {
                     string path = EditorUtility.SaveFilePanelInProject("Save Generic Bake", "PandaMotionRelay_Baked", "anim", "Choose a new asset path.");
                     if (string.IsNullOrEmpty(path)) return;
-                    var request = new GenericBakeRequest { director = director, evaluationDirector = evaluationDirector, track = tracks[trackIndex], outputPath = path, bakeSpace = bakeSpace };
+                    var request = new GenericBakeRequest
+                    {
+                        director = director, evaluationDirector = evaluationDirector, track = selectedTrack,
+                        outputPath = path, bakeSpace = bakeSpace, optimalReduction = optimalReduction
+                    };
                     try { GenericBakeRunner.StartBake(request); }
                     catch (Exception exception) { EditorUtility.DisplayDialog("Bake could not start", exception.Message, "OK"); }
                 }

@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.0.4
+
+- Add a 0–1 Optimal Reduction slider for Generic Bake. Reduce position and quaternion keys within a per-bone error budget while retaining clip endpoints and the keys around cuts and gap edges.
+- Shorten the Bake Window label to Close Micro Gaps so it fits the field.
+
 ## 1.0.3 — Production Preview
 
 - Add Close Unrepresentable Micro Gaps, a per-track option for gaps up to 10 µs whose edges collapse to one AnimationClip float key. Preview and Bake hold the outgoing Source until the incoming Clip starts. The Bake Window shows the corrected gap and cut time. The option defaults OFF and preserves authored Clip timings.

@@ -1,6 +1,6 @@
 # Panda Motion Relay Manual
 
-Version 1.0.3 — Production Preview / Internal Production Use（実戦投入前プレビュー版・社内／個人制作向け）。Unity 6と2022.3の全Editorテストは各198件合格しました。保存済み実戦コピーとVCCのWorld SDK環境でのローカル再生結果は[検証記録](../VERIFICATION.md)を参照してください。VRChatアップロード、実機、Quest、PhysBoneの確認と、ゴン作本人による実案件でのGUI確認は未実施です。
+Version 1.0.4。保存済み実戦コピーとVCCのWorld SDK環境でのローカル再生結果は[検証記録](../VERIFICATION.md)を参照してください。VRChatアップロード、実機、Quest、PhysBoneの確認と、ゴン作本人による実案件でのGUI確認は未実施です。
 
 このマニュアルは、HumanoidキャラクターをUnityのTimelineで動かしたことがあるアニメーター向けです。読み始める場所は[インストール](#3-インストール)、最初の作業は[最小構成](#5-最小構成)です。数値実績は[VERIFICATION.md](../VERIFICATION.md)、概要は[README.md](../README.md)を参照してください。
 
@@ -21,7 +21,7 @@ Version 1.0.3 — Production Preview / Internal Production Use（実戦投入前
 | Timeline | package.jsonの依存1.7.6。Unity 6の既存Projectでは検証済み1.8.13も使用 |
 | Source / Target | 有効なHumanoid Avatarを持つ独立したAnimator |
 | Bake | EditorのPlay Mode、Pause解除 |
-| 公開範囲 | Production Preview。全Unity・VRChat環境の保証ではありません |
+| 検証範囲 | 対象環境とローカル検証の結果は検証記録を参照 |
 
 ## 3. インストール
 
@@ -45,13 +45,13 @@ workspace/
 
 ### Add package from git URL
 
-Gitがインストールされ、Unityから実行できる環境を用意します。Production Preview 1.0.3は、Package Managerの`+ > Add package from git URL...`へ次のタグ固定URLを入力して導入します。
+Gitがインストールされ、Unityから実行できる環境を用意します。v1.0.4は、Package Managerの`+ > Add package from git URL...`へ次のタグ固定URLを入力して導入します。
 
 ```text
-https://github.com/SILL-BILL/panda-motion-relay.git#v1.0.3
+https://github.com/SILL-BILL/panda-motion-relay.git#v1.0.4
 ```
 
-実案件ではBranch追従URLを使わず、`Packages/packages-lock.json`で`v1.0.3`のRelease Commitへ固定されたことを確認してください。タグは後から移動しません。以降の不具合修正も新Version／新Tagとして配布します。SSH URLは導入例として扱いません。タグ導入確認の最終結果はGitHub Pre-release Notesにも記録します。
+実案件ではBranch追従URLを使わず、`Packages/packages-lock.json`で`v1.0.4`のRelease Commitへ固定されたことを確認してください。タグは後から移動しません。以降の不具合修正も新Version／新Tagとして配布します。SSH URLは導入例として扱いません。タグ導入確認の最終結果はGitHub Release Notesにも記録します。
 
 初回はSceneとTimelineをコピーし、Bake出力先に新規フォルダーを作って検証してください。既存AnimationClipは上書きしません。World → RootのTimeline再生には、13章のRemove Start Offset OFF設定が必要です。
 
@@ -139,7 +139,7 @@ Frame:             0       24      48       72
 
 保存済みTimelineでは、前Clipのendが後続Clipのstartを約0.313 ps超える事例がありました。隣接Clipで1 ps以下の境界丸め誤差は、PreviewとBakeの両方で後続Clipのstartを切替時刻として扱います。元のClip時刻は保存時の値を維持します。許容範囲を超えるOverlapでは警告し、その区間は転送しません。既定ではGapで転送と保留中の書き込みを取り消します。他の制御がなければ直前のTarget姿勢がTransform値として残りますが、前Sourceへの追従を続けるわけではありません。
 
-Bake Windowで対象のRelay Trackを選び、**Close Unrepresentable Micro Gaps** をONにすると、10 µs以下で出力のfloatキー時刻が衝突するGapを補正できます。約2.54 µsの隙間を含む実戦事例に対応します。画面に表示された補正量と切替時刻を確認してください。PreviewとBakeは後続Clipの開始まで前Sourceを継続します。設定はTrack単位で既定OFFです。Clipの時刻は書き換えません。
+Bake Windowで対象のRelay Trackを選び、**Close Micro Gaps** をONにすると、10 µs以下で出力のfloatキー時刻が衝突するGapを補正できます。約2.54 µsの隙間を含む実戦事例に対応します。画面に表示された補正量と切替時刻を確認してください。PreviewとBakeは後続Clipの開始まで前Sourceを継続します。設定はTrack単位で既定OFFです。Clipの時刻は書き換えません。
 
 補正条件に当てはまらないGapは元の区間を保ちます。別々の境界を別キーとして表せない場合は、引き続きBakeを停止します。
 
@@ -224,7 +224,7 @@ Bake開始時は、選択したRelay Trackの**全ClipのSource**を検証しま
 
 Frame Rateは0より大きく240以下、範囲は最大100000フレーム、追加点を含む採録数は最大100001点です。異なる境界が出力AnimationClipのfloat精度で同じキー時刻になる場合は、該当Clipと時刻を表示して停止します。時刻の妥当性、Overlap、Source／Target、出力先も採録前に検証します。
 
-Quaternion符号の連続性とCut直前のConstant Tangentを保持します。Key Reduction／Compressionはまだ行わず、各FrameのKeyが残ります。Gapもその時点のTarget実Transformを採録します。
+Quaternion符号の連続性とCut直前のConstant Tangentを保持します。Gapもその時点のTarget実Transformを採録します。Bake Windowの **Optimal Reduction** は0〜1で指定します。0は全採録キーを保持し、1は採録点で位置0.0001単位・回転0.05°までの誤差をボーンごとの出力カーブに許容します。途中の値では許容誤差も比例して小さくなります。Clipの両端、切替・Gap境界とその直前のキーは保持します。
 
 ## 13. World Bake：Rootへ記録／Hipsへ集約
 
@@ -378,7 +378,7 @@ Project自体を含む親フォルダーをLocal UPM Packageとして参照す�
 ## 19. Known Limitations
 
 - Blend、Relative Offset、Custom Source/Target Root、Position Only／Rotation Onlyは未対応。
-- Generic Mapping、Scale Bake、Secondary Bone Bake、Key Reduction、Batch Bake、Custom FPS UIは未対応。
+- Generic Mapping、Scale Bake、Secondary Bone Bake、Batch Bake、Custom FPS UIは未対応。
 - Avatarなしの外側Root／任意TransformだけのGeneric Root Bakeは次Phase候補で、今回のWorld → Rootとは別機能。
 - TargetはHumanoidのみ。同一Targetへの複数Relay Track同時Bindingは未対応。
 - Humanoid Mapping外の髪・スカート等のLocal姿勢は転送しませんが、親の身体ボーンには追従します。
