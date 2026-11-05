@@ -1,3 +1,26 @@
+# Production Preview 1.0.3 — Micro-gap bake verification
+
+Unity 6000.0.84f1 and 2022.3.22f1 each passed all 198 Editor tests. The new tests use the reported saved Clip times, check that the option defaults OFF and larger colliding gaps are rejected, and compare Preview ownership, stepped Timeline replay and Generic Animator replay with the option ON in Local, World → Root and World → Hips. The per-track setting survives serialization.
+
+The protected copy of the saved production Timeline reproduced the float key collision on Motion Relay Track (2) with the option OFF. The previous Clip ended at 73.70833333333333 s, and the incoming Clip started at 73.70833587646484 s. With the option ON, Preview and Bake hold the outgoing Source through the 2.543132 µs gap and switch at the incoming Clip's authored start. Only gaps up to 10 µs whose two ends resolve to the same float key are eligible. The saved Scene and Timeline files match their original SHA-256 hashes.
+
+Unity 2022.3.22f1 passed 4,809 native Timeline samples and 4,797 Generic Animator samples per condition in the protected production copy. World → Root playback used Remove Start Offset OFF.
+
+| Mode | Timeline max position error | Generic Animator max position error |
+| --- | ---: | ---: |
+| Local Root OFF | 0.0000484830 | 0.0000484830 |
+| Local Root ON | 0.0000484748 | 0.0000484748 |
+| World → Root | 0.0000483557 | 0.0000483557 |
+| World → Hips | 0.0000481637 | 0.0000481637 |
+
+Maximum rotation error was 0° in all modes. Scale and secondary curves were zero, Driver culling settings were restored, and the protected copy finished with zero Console errors and warnings.
+
+The World outputs passed the same replay comparisons in the VCC-created World SDK 3.10.5 project, with the same maximum errors. The local run reported zero Console errors and one SDK warning that the empty inspection scene ran without ClientSim. VCC ProjectSettings hashes matched before and after the run.
+
+Production GUI acceptance by Gonsaku is pending. VRChat upload, client, Quest and PhysBone verification are pending.
+
+---
+
 # Production Preview 0.1.2 — Timeline boundary roundoff
 
 Unity 6000.0.84f1 and 2022.3.22f1 each passed all 192 Editor tests. The focused 13 tests were also run separately and are included in the full suite. Cases cover ordinary overlap rejection, gaps, fractional cuts, float key collisions, and the reported 24 fps boundary.

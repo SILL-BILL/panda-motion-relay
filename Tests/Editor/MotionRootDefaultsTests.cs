@@ -26,12 +26,14 @@ namespace SillBill.PandaMotionRelay.Tests
             AssetDatabase.CreateAsset(timeline, path);
             var track = timeline.CreateTrack<MotionRelayTrack>();
             track.relayMotionRoot = enabled;
+            track.closeUnrepresentableMicroGaps = enabled;
             EditorUtility.SetDirty(track);
             AssetDatabase.SaveAssetIfDirty(track);
             Resources.UnloadAsset(track);
             Resources.UnloadAsset(timeline);
             var reloaded = AssetDatabase.LoadAssetAtPath<TimelineAsset>(path);
             Assert.That(reloaded.GetOutputTracks().OfType<MotionRelayTrack>().Single().relayMotionRoot, Is.EqualTo(enabled));
+            Assert.That(reloaded.GetOutputTracks().OfType<MotionRelayTrack>().Single().closeUnrepresentableMicroGaps, Is.EqualTo(enabled));
         }
     }
 }

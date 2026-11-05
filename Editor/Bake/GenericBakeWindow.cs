@@ -41,6 +41,20 @@ namespace SillBill.PandaMotionRelay.Editor
             if (tracks.Length == 0) { EditorGUILayout.HelpBox("Select a Director with a Motion Relay Track.", MessageType.Info); return; }
             trackIndex = Mathf.Clamp(trackIndex, 0, tracks.Length - 1);
             trackIndex = EditorGUILayout.Popup(new GUIContent("Relay Track", "Humanoid TargetへBindingした身体側Trackを選びます。Root-only Animator Trackは対象外です。"), trackIndex, tracks.Select(t => new GUIContent(t.name)).ToArray());
+            var selectedTrack = tracks[trackIndex];
+            var settings = new SerializedObject(selectedTrack);
+            settings.Update();
+            EditorGUILayout.PropertyField(settings.FindProperty("closeUnrepresentableMicroGaps"),
+                new GUIContent("Close Unrepresentable Micro Gaps", "10 µs以下で、Bakeのfloatキー時刻が衝突するGapだけを補正。後続Clip開始まで前Sourceを継続します。Previewにも適用されます。"));
+            settings.ApplyModifiedProperties();
+            if (selectedTrack.closeUnrepresentableMicroGaps)
+            {
+                var clips = selectedTrack.GetClips().OrderBy(c => c.start).ToArray();
+                for (int i = 1; i < clips.Length; i++)
+                    if (MotionRelayEvaluation.IsUnrepresentableMicroGap(clips[i - 1], clips[i], clips[0].start))
+                        EditorGUILayout.HelpBox(FormattableString.Invariant(
+                            $"'{clips[i - 1].displayName}' → '{clips[i].displayName}': Gap {(clips[i].start - clips[i - 1].end) * 1e6:F6} µs。切替 {clips[i].start:R} s。Preview/Bakeとも前Sourceをこの時刻まで継続します。"), MessageType.Warning);
+            }
             EditorGUILayout.HelpBox("全ClipのDriverは、使用区間外も本体・親・Animatorを有効にします。Activation Trackをミュートし、隠す場合はRendererのみOFFにしてください。", MessageType.Info);
             EditorGUILayout.HelpBox("Raw per-frame Generic bake for this Humanoid target. Mapped bones only; no scale or secondary-bone curves. Uses the Timeline frame rate and the first-to-last Relay Clip range.", MessageType.Info);
             if (!Application.isPlaying || EditorApplication.isPaused)

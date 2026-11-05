@@ -24,6 +24,15 @@ namespace SillBill.PandaMotionRelay
                 overlap < incoming.duration * .5;
         }
 
+        internal static bool IsUnrepresentableMicroGap(TimelineClip outgoing, TimelineClip incoming, double origin)
+        {
+            double gap = incoming.start - outgoing.end;
+            return gap > 0 && gap <= 1e-5 && outgoing.start < incoming.start &&
+                outgoing.end < incoming.end && gap < outgoing.duration * .5 &&
+                gap < incoming.duration * .5 &&
+                (float)(outgoing.end - origin) == (float)(incoming.start - origin);
+        }
+
 #if UNITY_EDITOR
         private static PlayableDirector bakeDirector;
         private static double bakeTime;

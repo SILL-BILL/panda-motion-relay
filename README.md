@@ -17,7 +17,7 @@ Driver_Float  ─┘
 
 ## 現在のステータス
 
-**0.1.2 — Production Preview / Internal Production Use**（実戦投入前プレビュー版・社内／個人制作向け）。Exact Cut、Humanoid姿勢転送、オプションのMotion Root転送、3方式のBake、一意な直接Master/Child構成の評価に対応します。
+**1.0.3 — Production Preview / Internal Production Use**（実戦投入前プレビュー版・社内／個人制作向け）。Exact Cut、Humanoid姿勢転送、オプションのMotion Root転送、3方式のBake、一意な直接Master/Child構成の評価に対応します。
 
 Unity 6／通常Unity 2022.3で各190件の自動テストと、実戦Sceneコピーの4条件（Local Root OFF／ON、World → Root、World → Hips）のGeneric Timeline再生がPASS。非表示Driverの身体Motionも確認しています。
 
@@ -28,7 +28,7 @@ RepositoryをUnity Projectの外へ取得し、Package Managerの`+ > Add packag
 実案件ではPackage Managerの`Add package from git URL...`へ次のタグ固定URLを指定します。
 
 ```text
-https://github.com/SILL-BILL/panda-motion-relay.git#v0.1.2
+https://github.com/SILL-BILL/panda-motion-relay.git#v1.0.3
 ```
 
 Branch追従URLは使わず、`Packages/packages-lock.json`の解決Commitを確認してください。初回はScene／Timelineのコピーと新規Bake出力フォルダーで検証します。v0.1.0タグは移動せず、修正は新Version／新Tagで配布します。
@@ -54,9 +54,11 @@ Humanoidモデルとモーションを用意した状態から始めます。初
 7. 新規Trackの`Relay Motion Root`はONです。Targetの配置を保持したい場合はOFFにします。既存Trackの保存済み設定は変更されません。Driverメッシュを隠す場合はRendererだけをOFFにします。
 8. Scene保存後、Play Mode・Pause解除にして`Tools > Panda Motion Relay > Bake Humanoid to Generic`を開き、Director・身体側Relay Track・`Bake Mode`を指定して新規`.anim`へ保存します。
 
-Exact Cutは`start <= t < end`です。隣接Clipの境界が丸め誤差で1 ps以下重なる場合は、後続Clipのstartで切り替えます。実案件では約0.313 psの重なりを確認しました。許容範囲を超えるOverlapは拒否し、Gapでは新たな転送を行いません。詳細操作は[正式マニュアル](Documentation~/Manual.md)を参照してください。
+Exact Cutは`start <= t < end`です。隣接Clipの境界が丸め誤差で1 ps以下重なる場合は、後続Clipのstartで切り替えます。実案件では約0.313 psの重なりを確認しました。許容範囲を超えるOverlapは拒否し、既定ではGapで新たな転送を行いません。詳細操作は[正式マニュアル](Documentation~/Manual.md)を参照してください。
 
-3つのBake ModeでClipをSnapし直す必要はありません。PreviewとBakeのExact Cutは、同じClip境界の実時刻を使います。異なる境界がAnimationClipのfloat精度で同じキー時刻になる場合は、Clip名と時刻を示して停止します。Unity 6と2022.3の全Editorテストは各192件合格し、保存済み実戦データのコピーで4条件のBakeと再生、VCCのWorld SDK環境でWorld出力のローカル再生を確認しました。VRChatへのアップロード、実機、Quest、PhysBoneの確認と、ゴン作本人による実案件でのGUI確認は未実施です。
+Bake Windowで対象のRelay Trackを選び、**Close Unrepresentable Micro Gaps** をONにすると、10 µs以下で出力のfloatキー時刻が衝突するGapを補正できます。約2.54 µsの隙間を含む実戦事例に対応します。画面に表示された補正量と切替時刻を確認してください。PreviewとBakeは後続Clipの開始まで前Sourceを継続します。設定はTrack単位で既定OFFです。Clipの時刻は書き換えません。
+
+3つのBake ModeでClipをSnapし直す必要はありません。PreviewとBakeのExact Cutは、同じClip境界の実時刻を使います。異なる境界がAnimationClipのfloat精度で同じキー時刻になる場合は、Clip名と時刻を示して停止します。Unity 6と2022.3の全Editorテストは各198件合格し、保存済み実戦データのコピーで4条件のBakeと再生、VCCのWorld SDK環境でWorld出力のローカル再生を確認しました。VRChatへのアップロード、実機、Quest、PhysBoneの確認と、ゴン作本人による実案件でのGUI確認は未実施です。
 
 Bake中は使用するDriver Animatorを一時的に`AlwaysAnimate`へ切り替え、終了・取消・例外時に元のCulling Modeへ戻します。RendererがOFFでも身体アニメーションを採録できます。手動でCulling Modeを変更する必要はありません。Driver本体・親・Animatorは引き続き常時Activeにしてください。
 

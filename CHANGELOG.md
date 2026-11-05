@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.0.3 — Production Preview
+
+- Add Close Unrepresentable Micro Gaps, a per-track option for gaps up to 10 µs whose edges collapse to one AnimationClip float key. Preview and Bake hold the outgoing Source until the incoming Clip starts. The Bake Window shows the corrected gap and cut time. The option defaults OFF and preserves authored Clip timings.
+- Cover the reported 2.54 µs gap with regression tests and verify Local and both World replay modes. All 198 Editor tests passed on Unity 6000.0.84f1 and 2022.3.22f1.
+
 ## 0.1.2 — Production Preview
 
 - Treat overlaps of up to 1 ps between otherwise adjacent Relay Clips as boundary roundoff. The saved production case overlapped by about 0.313 ps. Preview and Bake share the incoming Clip's authored cut time. Longer overlaps and distinct boundaries that collide at float key precision are rejected.

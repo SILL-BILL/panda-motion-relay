@@ -60,6 +60,45 @@ namespace SillBill.PandaMotionRelay.Tests
         [UnityTest] public IEnumerator Subframe_Local30RootOff() { yield return new EnterPlayMode(); yield return CheckSubframe(BakeSpace.Local, 30); yield return new ExitPlayMode(); }
         [UnityTest] public IEnumerator Subframe_WorldHips60WithGap() { yield return new EnterPlayMode(); yield return CheckSubframe(BakeSpace.Global, 60); yield return new ExitPlayMode(); }
         [UnityTest] public IEnumerator Subframe_BoundaryRoundoffUsesIncomingSource() { yield return new EnterPlayMode(); yield return CheckSubframe(BakeSpace.Local, 24, true); yield return new ExitPlayMode(); }
+        [UnityTest] public IEnumerator Subframe_MicroGapLocal() { yield return new EnterPlayMode(); yield return CheckSubframe(BakeSpace.Local, 24, microGap: true); yield return new ExitPlayMode(); }
+        [UnityTest] public IEnumerator Subframe_MicroGapWorldRoot() { yield return new EnterPlayMode(); yield return CheckSubframe(BakeSpace.World, 24, microGap: true); yield return new ExitPlayMode(); }
+        [UnityTest] public IEnumerator Subframe_MicroGapWorldHips() { yield return new EnterPlayMode(); yield return CheckSubframe(BakeSpace.Global, 24, microGap: true); yield return new ExitPlayMode(); }
+
+        [TestCase(false)]
+        [TestCase(true)]
+        public void Subframe_ReportedMicroGapRequiresOptIn(bool enabled)
+        {
+            var setup = CutTimeline();
+            ((TimelineAsset)setup.Director.playableAsset).editorSettings.frameRate = 24;
+            setup.Clips[0].start = 9.916666666666657;
+            setup.Clips[0].duration = 63.79166666666667;
+            setup.Clips[1].start = 73.70833587646484;
+            setup.Clips[1].duration = 10.791664123535156;
+            setup.Clips[2].start = 84.5;
+            setup.Clips[2].duration = 1;
+            var request = BakeRequest(setup);
+            Assert.That(request.track.closeUnrepresentableMicroGaps, Is.False);
+            request.track.closeUnrepresentableMicroGaps = enabled;
+            if (enabled) Assert.DoesNotThrow(() => HumanoidGenericBaker.Validate(request));
+            else Assert.Throws<ArgumentException>(() => HumanoidGenericBaker.Validate(request));
+            Assert.That(setup.Clips[0].end, Is.EqualTo(73.70833333333333));
+            Assert.That(setup.Clips[1].start, Is.EqualTo(73.70833587646484));
+        }
+
+        [Test]
+        public void Subframe_MicroGapOptInStillRejectsLargerGapCollision()
+        {
+            var setup = CutTimeline();
+            setup.Clips[0].duration = 1000;
+            setup.Clips[1].start = 1000.00002;
+            setup.Clips[1].duration = 1;
+            setup.Clips[2].start = setup.Clips[1].end;
+            setup.Clips[2].duration = 1;
+            var request = BakeRequest(setup);
+            request.track.closeUnrepresentableMicroGaps = true;
+            Assert.That((float)setup.Clips[0].end, Is.EqualTo((float)setup.Clips[1].start));
+            Assert.Throws<ArgumentException>(() => HumanoidGenericBaker.Validate(request));
+        }
 
         [Test]
         public void Subframe_AcceptsReportedBoundaryRoundoff()
@@ -95,7 +134,7 @@ namespace SillBill.PandaMotionRelay.Tests
             Assert.That(error.Message, Does.Contain("float key precision").And.Contain("start=").And.Contain("FPS=60"));
         }
 
-        private IEnumerator CheckSubframe(BakeSpace mode, int fps, bool boundaryRoundoff = false)
+        private IEnumerator CheckSubframe(BakeSpace mode, int fps, bool boundaryRoundoff = false, bool microGap = false)
         {
             var nested = NestedBakeTimeline();
             var setup = nested.Relay;
@@ -114,8 +153,27 @@ namespace SillBill.PandaMotionRelay.Tests
             if (boundaryRoundoff) setup.Clips[1].start -= 3e-13;
             setup.Clips[1].duration = second - setup.Clips[1].start;
             setup.Clips[2].start = setup.Clips[1].end; setup.Clips[2].duration = last - setup.Clips[2].start;
+            if (microGap)
+            {
+                setup.Clips[0].duration -= 1e-8;
+                request.track.closeUnrepresentableMicroGaps = true;
+            }
             foreach (var control in ((TimelineAsset)nested.Master.playableAsset).GetOutputTracks().OfType<ControlTrack>().SelectMany(t => t.GetClips()))
                 control.duration = 18;
+            if (microGap)
+            {
+                double middle = (setup.Clips[0].end + setup.Clips[1].start) * .5;
+                nested.Master.time = middle;
+                nested.Master.Evaluate();
+                Assert.That(SelectedBakeSource(setup.Director), Is.EqualTo(setup.A));
+                nested.Master.time = setup.Clips[1].start;
+                nested.Master.Evaluate();
+                Assert.That(SelectedBakeSource(setup.Director), Is.EqualTo(setup.B));
+                nested.Master.time = middle;
+                nested.Master.Evaluate();
+                Assert.That(SelectedBakeSource(setup.Director), Is.EqualTo(setup.A));
+            }
+
             var parent = Own(new GameObject("SubframeOriginalParent")).transform;
             parent.SetPositionAndRotation(new Vector3(1, 2, -3), Quaternion.Euler(0, 19, 0));
             setup.Target.transform.SetParent(parent, false);
@@ -141,6 +199,7 @@ namespace SillBill.PandaMotionRelay.Tests
             {
                 double time = nested.Master.time;
                 var active = setup.Clips.LastOrDefault(c => c.start <= time && time < c.end);
+                if (microGap && time >= setup.Clips[0].end && time < setup.Clips[1].start) active = setup.Clips[0];
                 var source = active == null ? null : ((MotionRelayClip)active.asset).source.Resolve(setup.Director);
                 Assert.That(SelectedBakeSource(setup.Director), Is.EqualTo(source), $"Ownership at {time:R}");
                 if (source != null)
@@ -178,7 +237,7 @@ namespace SillBill.PandaMotionRelay.Tests
                 var replayTimes = new List<float>(times);
                 var replayFrames = new List<WorldFrame>(frames);
                 var boundaries = setup.Clips.SelectMany(c => new[] { c.start, c.end }).Distinct().Skip(1);
-                if (boundaryRoundoff)
+                if (boundaryRoundoff || microGap)
                     boundaries = boundaries.Where(t => t != setup.Clips[0].end);
                 foreach (double boundary in boundaries)
                 {

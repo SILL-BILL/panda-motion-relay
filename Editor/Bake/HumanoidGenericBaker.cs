@@ -86,7 +86,7 @@ namespace SillBill.PandaMotionRelay.Editor
                 if (bone == target.transform || !bone.IsChildOf(target.transform) || !paths.Add(AnimationUtility.CalculateTransformPath(bone, target.transform)))
                     throw new ArgumentException("Mapped bones require unique paths below the target Animator root.");
             ValidateOutputPath(request.outputPath);
-            return BuildSamplePlan(clips, fps);
+            return BuildSamplePlan(clips, fps, request.track.closeUnrepresentableMicroGaps);
         }
 
         private static bool Finite(double value) => !double.IsNaN(value) && !double.IsInfinity(value);
@@ -116,7 +116,7 @@ namespace SillBill.PandaMotionRelay.Editor
             return Math.Abs(frame - Math.Round(frame)) <= Math.Max(1, Math.Abs(frame)) * 8.881784197001252e-16;
         }
 
-        private static List<BakeSample> BuildSamplePlan(TimelineClip[] clips, double fps)
+        private static List<BakeSample> BuildSamplePlan(TimelineClip[] clips, double fps, bool closeMicroGaps)
         {
             const int maxSamples = 100001;
             double first = clips[0].start;
@@ -132,7 +132,8 @@ namespace SillBill.PandaMotionRelay.Editor
             {
                 var clip = clips[i];
                 AddBoundary(clip.start, clip);
-                double end = i + 1 < clips.Length && MotionRelayEvaluation.IsBoundaryRoundoff(clip, clips[i + 1])
+                double end = i + 1 < clips.Length && (MotionRelayEvaluation.IsBoundaryRoundoff(clip, clips[i + 1]) ||
+                    closeMicroGaps && MotionRelayEvaluation.IsUnrepresentableMicroGap(clip, clips[i + 1], first))
                     ? clips[i + 1].start : clip.end;
                 AddBoundary(end, clip);
             }

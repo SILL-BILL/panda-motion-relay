@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.Playables;
 using UnityEngine.Timeline;
@@ -13,6 +14,9 @@ namespace SillBill.PandaMotionRelay
         private bool pending;
 
         internal TimelineClip[] Clips { get; set; }
+        internal Dictionary<TimelineClip, TimelineClip> NextClips { get; set; }
+        internal double Origin { get; set; }
+        internal MotionRelayTrack Track { get; set; }
         internal PlayableDirector Director { get; set; }
         internal bool RelayMotionRoot { get; set; }
 
@@ -30,7 +34,12 @@ namespace SillBill.PandaMotionRelay
 #endif
             for (int i = 0; Clips != null && i < Clips.Length; i++)
             {
-                if (time < Clips[i].start || time >= Clips[i].end) continue;
+                double end = Clips[i].end;
+                if (Track != null && Track.closeUnrepresentableMicroGaps &&
+                    NextClips.TryGetValue(Clips[i], out var next) &&
+                    MotionRelayEvaluation.IsUnrepresentableMicroGap(Clips[i], next, Origin))
+                    end = next.start;
+                if (time < Clips[i].start || time >= end) continue;
                 activeCount++;
                 if (activeCount == 2)
                 {
